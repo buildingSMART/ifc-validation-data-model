@@ -6,6 +6,7 @@ Django app and model for IFC Validation Service entities
 
 - IFC Validation Request
 - IFC Validation Task
+- IFC Gherkin Task Result
 
 ## How to run?
 
