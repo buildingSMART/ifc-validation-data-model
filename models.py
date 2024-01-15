@@ -343,3 +343,84 @@ class IfcValidationTask(AuditedBaseModel):
         self.status = self.Status.SKIPPED
         self.status_reason = reason
         self.save()
+
+
+class IfcValidationTaskResult(AuditedBaseModel):
+    """
+    An abstract class for IFC Task Results.
+    """
+
+    # TODO
+    pass
+
+    class Meta:
+        abstract = True
+
+
+class IfcGherkinTaskResult(IfcValidationTaskResult):
+    """
+    A model to store and track IFC Gherkin Task Results.
+    """
+
+    id = models.AutoField(
+        primary_key=True,
+        help_text="Identifier of the task result (auto-generated)."
+    )
+
+    request = models.ForeignKey(
+        to=IfcValidationRequest,
+        on_delete=models.CASCADE,
+        related_name='results',
+        blank=False,
+        null=False,
+        db_index=True,
+        help_text='What IFC Validation Request this Task belongs to.'
+    )
+
+    task = models.ForeignKey(
+        to=IfcValidationTask,
+        on_delete=models.CASCADE,
+        related_name='results',
+        blank=False,
+        null=False,
+        db_index=True,
+        help_text='What IFC Validation Task this Result belongs to.'
+    )
+
+    feature = models.CharField(
+        max_length=1024,
+        null=False,
+        blank=False,
+        db_index=True,
+        help_text="Name of the Gherkin Feature."
+    )
+
+    feature_url = models.CharField(
+        max_length=1024,
+        null=False,
+        blank=False,
+        db_index=True,
+        help_text="Url with definition of the Gherkin Feature."
+    )
+
+    step = models.CharField(
+        max_length=1024,
+        null=False,
+        blank=False,
+        help_text="Step within the Gherkin Feature."
+    )
+
+    message = models.TextField(
+        null=True,
+        blank=True,
+        help_text="Output message."
+    )
+
+    class Meta:
+        db_table = "ifc_gherkin_task_result"
+        verbose_name = "IFC Validation Gherkin Task Result"
+        verbose_name_plural = "IFC Validation Gherkin Task Results"
+
+    def __str__(self):
+
+        return f'#{self.id} - {self.request.file_name} - {self.feature}'

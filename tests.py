@@ -3,7 +3,7 @@ import datetime
 from django.test import TestCase
 from django.contrib.auth.models import User
 
-from apps.ifc_validation_models.models import IfcValidationRequest, IfcValidationTask  # TODO: for now needs to be absolute!
+from apps.ifc_validation_models.models import IfcValidationRequest, IfcValidationTask, IfcGherkinTaskResult  # TODO: for now needs to be absolute!
 from apps.ifc_validation_models.decorators import requires_django_user_context
 
 
@@ -102,3 +102,34 @@ class IfcValidationAppTestCase(TestCase):
         self.assertEqual(task1.id, tasks[0].id)
         self.assertEqual(task2.id, tasks[1].id)
         self.assertEqual(task3.id, tasks[2].id)
+
+    @requires_django_user_context
+    def test_created_gherkin_results_can_be_navigated(self):
+
+        request = IfcValidationRequest.objects.create(file_name='test7.ifc', file='test7.ifc')
+        task1 = IfcValidationTask.objects.create(request=request)
+        task2 = IfcValidationTask.objects.create(request=request)
+        gherkin_result1 = IfcGherkinTaskResult.objects.create(request=request, task=task1, feature="RUL001 - Rule Description")
+        gherkin_result2 = IfcGherkinTaskResult.objects.create(request=request, task=task1, feature="RUL002 - Rule Description")
+        gherkin_result3 = IfcGherkinTaskResult.objects.create(request=request, task=task1, feature="RUL003 - Rule Description")
+        gherkin_result4 = IfcGherkinTaskResult.objects.create(request=request, task=task2, feature="RUL001 - Rule Description")
+
+        all_results = IfcGherkinTaskResult.objects.all()
+        task1_results = IfcGherkinTaskResult.objects.filter(request__id=request.id).filter(task__id=task1.id)
+        task2_results = IfcGherkinTaskResult.objects.filter(request__id=request.id).filter(task__id=task2.id)
+
+        self.assertEqual(all_results.count(), 4)
+        self.assertEqual(task1_results.count(), 3)
+        self.assertEqual(task2_results.count(), 1)
+        self.assertEqual(gherkin_result1.request.id, request.id)
+        self.assertEqual(gherkin_result1.task.id, task1.id)
+        self.assertEqual(gherkin_result1.id, task1_results[0].id)
+        self.assertEqual(gherkin_result2.request.id, request.id)
+        self.assertEqual(gherkin_result2.task.id, task1.id)
+        self.assertEqual(gherkin_result2.id, task1_results[1].id)
+        self.assertEqual(gherkin_result3.request.id, request.id)
+        self.assertEqual(gherkin_result3.task.id, task1.id)
+        self.assertEqual(gherkin_result3.id, task1_results[2].id)
+        self.assertEqual(gherkin_result4.request.id, request.id)
+        self.assertEqual(gherkin_result4.task.id, task2.id)
+        self.assertEqual(gherkin_result4.id, task2_results[0].id)
