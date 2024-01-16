@@ -4,9 +4,18 @@ Django app and model for IFC Validation Service entities
 
 ## Entities
 
+- IFC Company
+- IFC Authoring Tool
+- IFC Model
+- IFC Model Instance
 - IFC Validation Request
 - IFC Validation Task
-- IFC Gherkin Task Result
+- IFC Validation Outcome
+
+## Deprecated Entities
+
+- IFC Validation Task Result (use IFC Validation Outcome)
+- IFC Gherkin Task Result (use IFC Validation Outcome)
 
 ## How to run?
 
@@ -22,7 +31,9 @@ python3 manage.py migrate
 python3 manage.py createsuperuser --username SYSTEM
 ```
 
-### Unit Test
+### Integration Tests
+
+Run this command to run tests against in-memory database.
 
 ```shell
 python3 manage.py test apps --settings apps.ifc_validation_models.test_settings --debug-mode --verbosity 3

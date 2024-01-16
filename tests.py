@@ -4,6 +4,7 @@ from django.test import TestCase
 from django.contrib.auth.models import User
 
 from apps.ifc_validation_models.models import IfcValidationRequest, IfcValidationTask, IfcGherkinTaskResult  # TODO: for now needs to be absolute!
+from apps.ifc_validation_models.models import IfcCompany, IfcAuthoringTool, IfcModel, IfcModelInstance
 from apps.ifc_validation_models.decorators import requires_django_user_context
 
 
@@ -133,3 +134,23 @@ class IfcValidationAppTestCase(TestCase):
         self.assertEqual(gherkin_result4.request.id, request.id)
         self.assertEqual(gherkin_result4.task.id, task2.id)
         self.assertEqual(gherkin_result4.id, task2_results[0].id)
+
+    @requires_django_user_context
+    def test_newly_created_tool_and_model_can_be_navigated(self):
+
+        user = User.objects.get(id=1)
+        company = IfcCompany.objects.create(name='Acme Inc.')
+        tool = IfcAuthoringTool.objects.create(name='Tool XYZ', version='1.0-alpha', company=company)
+        model = IfcModel.objects.create(file_name='test_123.ifc', size=2048, produced_by=tool, uploaded_by=user)
+        model2 = IfcModel.objects.create(file_name='test_xyz.ifc', size=4096, produced_by=tool, uploaded_by=user)
+
+        all_tools = IfcAuthoringTool.objects.all()
+
+        self.assertEqual(all_tools.count(), 1)
+        self.assertEqual(all_tools[0].id, tool.id)
+        self.assertEqual(tool.company.name, company.name)
+        self.assertEqual(all_tools.first().company.name, company.name)
+        self.assertEqual(model.produced_by.company.name, company.name)
+        self.assertEqual(model.uploaded_by.username, user.username)
+        self.assertEqual(user.models.count(), 2)
+        self.assertEqual(user.models.all()[1].file_name, model2.file_name)
