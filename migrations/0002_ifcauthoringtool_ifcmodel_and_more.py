@@ -131,7 +131,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='ifcvalidationtask',
             name='type',
-            field=models.CharField(choices=[('SYNTAX', 'STEP Physical File Syntax'), ('SCHEMA', 'Schema (Express language)'), ('MVD', 'Model View Definitions'), ('BSDD', 'Requirements per bSDD Classification'), ('INFO', 'Parse Info'), ('PREREQ', 'Prerequisites'), ('NORMATIVE_IA', 'Normative Rules - Implementer Agreements (IA)'), ('NORMATIVE_IP', 'Gherkin Rules - Informal Propositions (IP)'), ('INDUSTRY', 'Industry Practices (TBC)')], db_index=True, help_text='Type of the Validation Task.', max_length=25),
+            field=models.CharField(choices=[('SYNTAX', 'STEP Physical File Syntax'), ('SCHEMA', 'Schema (Express language)'), ('MVD', 'Model View Definitions'), ('BSDD', 'Requirements per bSDD Classification'), ('INFO', 'Parse Info'), ('PREREQ', 'Prerequisites'), ('NORMATIVE_IA', 'Normative Rules - Implementer Agreements (IA)'), ('NORMATIVE_IP', 'Normative Rules - Informal Propositions (IP)'), ('INDUSTRY', 'Industry Practices (TBC)')], db_index=True, help_text='Type of the Validation Task.', max_length=25),
         ),
         migrations.CreateModel(
             name='IfcModelInstance',

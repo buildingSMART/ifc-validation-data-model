@@ -1,9 +1,9 @@
 import threading
-import datetime
 
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
+from django.utils import timezone
 from deprecated import deprecated
 
 local = threading.local()
@@ -102,7 +102,7 @@ class AuditedBaseModel(models.Model):
             self.created_by = user
         else:
             self.updated_by = user
-            self.updated = datetime.datetime.now()
+            self.updated = timezone.now()
 
         super().save(*args, **kwargs)
 
@@ -512,7 +512,7 @@ class IfcValidationRequest(AuditedBaseModel):
     def mark_as_initiated(self):
 
         self.status = self.Status.INITIATED
-        self.started = datetime.datetime.now()
+        self.started = timezone.now()
         self.progress = 0
         self.save()
 
@@ -520,7 +520,7 @@ class IfcValidationRequest(AuditedBaseModel):
 
         self.status = self.Status.COMPLETED
         self.status_reason = reason
-        self.completed = datetime.datetime.now()
+        self.completed = timezone.now()
         self.progress = 100
         self.save()
 
@@ -528,7 +528,7 @@ class IfcValidationRequest(AuditedBaseModel):
 
         self.status = self.Status.FAILED
         self.status_reason = reason
-        self.completed = datetime.datetime.now()
+        self.completed = timezone.now()
         self.save()
 
 
@@ -548,7 +548,7 @@ class IfcValidationTask(AuditedBaseModel):
         PARSE_INFO          = 'INFO', 'Parse Info'
         PREREQUISITES       = 'PREREQ', 'Prerequisites'
         NORMATIVE_IA        = 'NORMATIVE_IA', 'Normative Rules - Implementer Agreements (IA)'
-        NORMATIVE_IP        = 'NORMATIVE_IP', 'Gherkin Rules - Informal Propositions (IP)'
+        NORMATIVE_IP        = 'NORMATIVE_IP', 'Normative Rules - Informal Propositions (IP)'
         INDUSTRY_PRACTICES  = 'INDUSTRY', 'Industry Practices (TBC)'
 
     class Status(models.TextChoices):
@@ -656,7 +656,7 @@ class IfcValidationTask(AuditedBaseModel):
     def mark_as_initiated(self):
 
         self.status = self.Status.INITIATED
-        self.started = datetime.datetime.now()
+        self.started = timezone.now()
         self.progress = 0
         self.save()
 
@@ -664,7 +664,7 @@ class IfcValidationTask(AuditedBaseModel):
 
         self.status = self.Status.COMPLETED
         self.status_reason = reason
-        self.ended = datetime.datetime.now()
+        self.ended = timezone.now()
         self.progress = 100
         self.save()
 
@@ -672,7 +672,7 @@ class IfcValidationTask(AuditedBaseModel):
 
         self.status = self.Status.FAILED
         self.status_reason = reason
-        self.ended = datetime.datetime.now()
+        self.ended = timezone.now()
         self.save()
 
     def mark_as_skipped(self, reason):
