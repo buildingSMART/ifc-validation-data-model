@@ -12,11 +12,6 @@ Django app and model for IFC Validation Service entities
 - IFC Validation Task
 - IFC Validation Outcome
 
-## Deprecated Entities
-
-- IFC Validation Task Result (use IFC Validation Outcome)
-- IFC Gherkin Task Result (use IFC Validation Outcome)
-
 ## How to run?
 
 ### Initial run

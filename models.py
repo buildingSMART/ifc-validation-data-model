@@ -1,10 +1,11 @@
 import threading
+import math
 
 from django.db import models
+from django.db.models import Min, Max
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
-from deprecated import deprecated
 
 local = threading.local()
 
@@ -63,6 +64,7 @@ class AuditedBaseModel(models.Model):
     updated = models.DateTimeField(
         # don't use auto_add; as this will also be set on creation of this instance - see save()
         null=True,
+        blank=True,
         help_text='Timestamp this instance was last updated.'
     )
     created_by = models.ForeignKey(
@@ -78,6 +80,7 @@ class AuditedBaseModel(models.Model):
         on_delete=models.RESTRICT,
         related_name='+',
         null=True,
+        blank=True,
         db_index=True,
         help_text='Who updated this instance.'
     )
@@ -131,6 +134,10 @@ class IfcCompany(AuditedBaseModel):
         verbose_name = "Company"
         verbose_name_plural = "Companies"
 
+    def __str__(self):
+
+        return f'{self.name}'
+
 
 class IfcAuthoringTool(AuditedBaseModel):
     """
@@ -146,10 +153,10 @@ class IfcAuthoringTool(AuditedBaseModel):
         to=IfcCompany,
         on_delete=models.CASCADE,
         related_name='company',
-        blank=False,
-        null=False,
+        null=True,
+        blank=True,
         db_index=True,
-        help_text='What Company this Authoring Tool belongs to.'
+        help_text='What Company this Authoring Tool belongs to (optional).'
     )
 
     name = models.CharField(
@@ -176,6 +183,47 @@ class IfcAuthoringTool(AuditedBaseModel):
             models.UniqueConstraint(fields=['name', 'version'], name='unique_name_version')
         ]
 
+    def __str__(self):
+
+        return f'{self.full_name}'.strip()
+
+    @property
+    def full_name(self):
+        """
+        Returns full name of the Authoring Tool, concatenating company, name and version (where available).
+        An Authoring Tool has at least a name; company and version are optional.
+        """
+
+        company_name = self.company.name if self.company else ''
+        full_name_without_version = f'{company_name} {self.name}'.strip()
+
+        if self.version is None:
+            return full_name_without_version
+        else:
+            return f'{full_name_without_version} - {self.version}'.strip()
+            
+    def find_by_full_name(full_name):       
+        """
+        Look for the Authoring Tool(s) within the Company/Authoring Tool hierarchy.
+        Fallback to matching records without versions, dashes and/or company.
+        """
+
+        def full_name_without_version_dash(full_name):
+            without_version = full_name.rpartition('-')  # last dash only
+            return '{} {}'.format(without_version[0].strip(), without_version[2].strip())
+        
+        def matches(obj, full_name):
+            return (full_name == obj.full_name or full_name == full_name_without_version_dash(obj.full_name))
+        
+        found = [obj for obj in IfcAuthoringTool.objects.all() if matches(obj, full_name)] # cannot use a property to filter...
+        
+        if found is None or len(found) == 0:
+            return None
+        elif len(found) == 1:
+            return found[0]
+        else:
+            return found
+        
 
 class IfcModel(AuditedBaseModel):
     """
@@ -190,6 +238,16 @@ class IfcModel(AuditedBaseModel):
         INVALID       = 'i', 'Invalid'
         NOT_VALIDATED = 'n', 'Not Validated'
 
+    class License(models.TextChoices):
+        """
+        The license of a Model.
+        """
+        PRIVATE       = 'PRIVATE', 'Private'
+        CC            = 'CC',      'CC'
+        MIT           = 'MIT',     'MIT'
+        GPL           = 'GPL',     'GPL'
+        LGPL          = 'LGPL',    'LGPL'
+
     id = models.AutoField(
         primary_key=True,
         help_text="Identifier of the Model (auto-generated)."
@@ -200,19 +258,20 @@ class IfcModel(AuditedBaseModel):
         on_delete=models.RESTRICT,
         related_name='models',
         null=True,
+        blank=True,
         db_index=True,
         help_text='What tool was used to create this Model.'
     )
 
     date = models.DateTimeField(
         null=True,
-        blank=False,
+        blank=True,
         help_text="Timestamp the Model was created."
     )
 
     details = models.TextField(
         null=True,
-        blank=False,
+        blank=True,
         help_text="Details of the Model."
     )
 
@@ -238,42 +297,49 @@ class IfcModel(AuditedBaseModel):
     # TODO - not sure what this field is used for
     hours = models.PositiveIntegerField(
         null=True,
+        blank=True,
         help_text="TBC (???)"        
     )
 
     license = models.CharField(
         max_length=7,
-        null=True,
+        choices=License.choices,
+        default=License.PRIVATE,
+        db_index=True,
+        null=False,
         blank=False,
         help_text="License of the Model."
     )
 
     mvd = models.CharField(
-        max_length=25,
+        max_length=150,
         null=True,
-        blank=False,
+        blank=True,
         help_text="MVD Classification of the Model."
     )
 
     number_of_elements = models.PositiveIntegerField(
         null=True,
+        blank=True,
         help_text="Number of elements within the Model."        
     )
 
-    number_of_geometries = models.PositiveSmallIntegerField(
+    number_of_geometries = models.PositiveIntegerField(
         null=True,
+        blank=True,
         help_text="Number of geometries within the Model."        
     )
 
-    number_of_properties = models.PositiveSmallIntegerField(
+    number_of_properties = models.PositiveIntegerField(
         null=True,
+        blank=True,
         help_text="Number of properties within the Model."        
     )
 
     schema = models.CharField(
         max_length=25,
         null=True,
-        blank=False,
+        blank=True,
         help_text="Schema of the Model."
     )
 
@@ -368,6 +434,7 @@ class IfcModel(AuditedBaseModel):
 
     properties = models.JSONField(
         null=True,
+        blank=True,
         help_text="Properties of the Model."
     )
 
@@ -378,7 +445,24 @@ class IfcModel(AuditedBaseModel):
 
     def __str__(self):
 
-        return f'#{self.id} - {self.created} - {self.type}'
+        return f'#{self.id} - {self.created.date()} - {self.file_name}'
+
+    @property
+    def size_text(self):
+        """
+        Returns the size of the Model in more human friendly text (eg. 5 KB)
+        """
+        if self.size is None:
+            return 'unknown'
+        if self.size == 0:
+            return '0 B'
+        
+        size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
+        i = int(math.floor(math.log(self.size, 1024)))
+        p = math.pow(1024, i)
+        s = round(self.size / p, 2) if self.size > 1024 else self.size
+        
+        return f"{s} {size_name[i]}"
 
 
 class IfcModelInstance(AuditedBaseModel):
@@ -418,6 +502,7 @@ class IfcModelInstance(AuditedBaseModel):
 
     fields = models.JSONField(
         null=True,
+        blank=True,
         help_text="Fields of the Instance."
     )
 
@@ -481,9 +566,18 @@ class IfcValidationRequest(AuditedBaseModel):
 
     progress = models.PositiveSmallIntegerField(
         null=True,
-        blank=False,
+        blank=True,
         db_index=True,
         help_text="Overall progress (%) of the Validation Request."
+    )
+
+    model = models.ForeignKey(
+        to=IfcModel,
+        on_delete=models.RESTRICT,
+        related_name='requests',
+        null=True,
+        db_index=True,
+        help_text='What Model is created based on this Validation Request.'
     )
 
     class Meta:
@@ -498,7 +592,7 @@ class IfcValidationRequest(AuditedBaseModel):
 
     def __str__(self):
 
-        return f'#{self.id} - {self.file_name} - {self.created.date()} - {self.status}'
+        return f'#{self.id} - {self.created.date()} - {self.file_name}'
 
     @property
     def has_final_status(self):
@@ -508,6 +602,18 @@ class IfcValidationRequest(AuditedBaseModel):
             self.Status.COMPLETED
         ]
         return self.status in FINAL_STATUS_LIST
+
+    @property
+    def duration(self):
+
+        min = IfcValidationTask.objects.filter(request__id=self.id).aggregate(Min("started"))['started__min']
+        max = IfcValidationTask.objects.filter(request__id=self.id).aggregate(Max("ended"))['ended__max']
+
+        if min is not None and max is not None:
+            diff = max - min
+            return diff.total_seconds()
+        else:
+            return None
 
     def mark_as_initiated(self):
 
@@ -531,6 +637,15 @@ class IfcValidationRequest(AuditedBaseModel):
         self.completed = timezone.now()
         self.save()
 
+    def mark_as_pending(self, reason):
+        
+        self.status = self.Status.PENDING
+        self.status_reason = reason
+        self.progress = 0
+        self.started = None
+        self.ended = None
+        self.save()
+    
 
 class IfcValidationTask(AuditedBaseModel):
     """
@@ -618,9 +733,21 @@ class IfcValidationTask(AuditedBaseModel):
 
     progress = models.PositiveSmallIntegerField(
         null=True,
-        blank=False,
+        blank=True,
         db_index=True,
         help_text="Overall progress (%) of the Validation Task."
+    )
+
+    process_id = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Process id of subprocess executing the Validation Task."
+    )
+
+    process_cmd = models.TextField(
+        null=True,
+        blank=True,
+        help_text="Command and arguments used to launch the subprocess executing the Validation Task."
     )
 
     class Meta:
@@ -632,7 +759,6 @@ class IfcValidationTask(AuditedBaseModel):
     def __str__(self):
 
         return f'#{self.id} - {self.request.file_name} - {self.type} - {self.created.date()} - {self.status}'
-
 
     @property
     def has_final_status(self):
@@ -660,7 +786,7 @@ class IfcValidationTask(AuditedBaseModel):
         self.progress = 0
         self.save()
 
-    def mark_as_completed(self, reason):
+    def mark_as_completed(self, reason=None):
 
         self.status = self.Status.COMPLETED
         self.status_reason = reason
@@ -668,17 +794,23 @@ class IfcValidationTask(AuditedBaseModel):
         self.progress = 100
         self.save()
 
-    def mark_as_failed(self, reason):
+    def mark_as_failed(self, reason=None):
 
         self.status = self.Status.FAILED
         self.status_reason = reason
         self.ended = timezone.now()
         self.save()
 
-    def mark_as_skipped(self, reason):
+    def mark_as_skipped(self, reason=None):
 
         self.status = self.Status.SKIPPED
         self.status_reason = reason
+        self.save()
+
+    def set_process_details(self, id, cmd):
+
+        self.process_id = id
+        self.process_cmd = cmd
         self.save()
 
 
@@ -703,13 +835,12 @@ class IfcValidationOutcome(AuditedBaseModel):
     )
 
     instance = models.ForeignKey(
-        to=IfcModel,
+        to=IfcModelInstance,
         on_delete=models.CASCADE,
         related_name='outcomes',
-        blank=False,
-        null=False,
+        null=True,
         db_index=True,
-        help_text='What Model Instance this Outcome is applicable to.'
+        help_text='What Model Instance this Outcome is applicable to (optional).'
     )
 
     validation_task = models.ForeignKey(
@@ -724,24 +855,16 @@ class IfcValidationOutcome(AuditedBaseModel):
 
     feature = models.CharField(
         max_length=1024,
-        null=False,
-        blank=False,
-        help_text="Name of the Gherkin Feature."
+        null=True,
+        blank=True,
+        help_text="Name of the Gherkin Feature (optional)."
     )
 
     feature_version = models.PositiveSmallIntegerField(
-        null=False,
-        blank=False,
+        null=True,
+        blank=True,
         db_index=True,
-        help_text="Version number of the Gherkin Feature."
-    )
-
-    code = models.CharField(
-        max_length=6,
-        null=False,
-        blank=False,
-        db_index=True,
-        help_text="Name of the Gherkin Feature."
+        help_text="Version number of the Gherkin Feature (optional)."
     )
 
     severity = models.PositiveSmallIntegerField(
@@ -755,13 +878,13 @@ class IfcValidationOutcome(AuditedBaseModel):
 
     expected = models.JSONField(
         null=True,
-        blank=False,
+        blank=True,
         help_text="Expected value(s) for the Validation Outcome."
     )
 
     observed = models.JSONField(
         null=True,
-        blank=False,
+        blank=True,
         help_text="Observed value(s) for the Validation Outcome."
     )
 
@@ -770,93 +893,11 @@ class IfcValidationOutcome(AuditedBaseModel):
         verbose_name = "Validation Outcome"
         verbose_name_plural = "Validation Outcomes"
         indexes = [
-            models.Index(fields=["code", "feature_version"]),
-            models.Index(fields=["code", "feature_version", "severity"])
+            models.Index(fields=["feature", "feature_version"]),
+            models.Index(fields=["feature", "feature_version", "severity"])
         ]
 
     def __str__(self):
 
         return f'#{self.id} - {self.feature} - v{self.feature_version} - {self.severity}'
 
-
-@deprecated("Use IfcValidationOutcome instead.")
-class IfcValidationTaskResult(AuditedBaseModel):
-    """
-    An abstract class for Task Results.
-    """
-
-    # TODO
-    pass
-
-    class Meta:
-        abstract = True
-
-
-@deprecated("Use IfcValidationOutcome instead.")
-class IfcGherkinTaskResult(IfcValidationTaskResult):
-    """
-    A model to store and track Gherkin Task Results.
-    """
-
-    id = models.AutoField(
-        primary_key=True,
-        help_text="Identifier of the task result (auto-generated)."
-    )
-
-    request = models.ForeignKey(
-        to=IfcValidationRequest,
-        on_delete=models.CASCADE,
-        related_name='results',
-        blank=False,
-        null=False,
-        db_index=True,
-        help_text='What Validation Request this Task belongs to.'
-    )
-
-    task = models.ForeignKey(
-        to=IfcValidationTask,
-        on_delete=models.CASCADE,
-        related_name='results',
-        blank=False,
-        null=False,
-        db_index=True,
-        help_text='What Validation Task this Result belongs to.'
-    )
-
-    feature = models.CharField(
-        max_length=1024,
-        null=False,
-        blank=False,
-        db_index=True,
-        help_text="Name of the Gherkin Feature."
-    )
-
-    feature_url = models.CharField(
-        max_length=1024,
-        null=False,
-        blank=False,
-        db_index=True,
-        help_text="Url with definition of the Gherkin Feature."
-    )
-
-    step = models.CharField(
-        max_length=1024,
-        null=False,
-        blank=False,
-        help_text="Step within the Gherkin Feature."
-    )
-
-    message = models.TextField(
-        null=True,
-        blank=True,
-        help_text="Output message."
-    )
-
-    class Meta:
-        db_table = "ifc_gherkin_task_result"
-        verbose_name = "Validation Gherkin Task Result"
-        verbose_name_plural = "Validation Gherkin Task Results"
-
-    def __str__(self):
-
-        return f'#{self.id} - {self.request.file_name} - {self.feature}'
