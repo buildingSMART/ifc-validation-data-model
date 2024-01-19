@@ -1,10 +1,12 @@
 import datetime
+from time import sleep
 
 from django.test import TestCase
+from django.utils import timezone
 from django.contrib.auth.models import User
 
-from apps.ifc_validation_models.models import IfcValidationRequest, IfcValidationTask, IfcGherkinTaskResult  # TODO: for now needs to be absolute!
-from apps.ifc_validation_models.models import IfcCompany, IfcAuthoringTool, IfcModel, IfcModelInstance
+from apps.ifc_validation_models.models import IfcValidationRequest, IfcValidationTask  # TODO: for now needs to be absolute!
+from apps.ifc_validation_models.models import IfcCompany, IfcAuthoringTool, IfcModel
 from apps.ifc_validation_models.decorators import requires_django_user_context
 
 
@@ -105,35 +107,35 @@ class IfcValidationAppTestCase(TestCase):
         self.assertEqual(task3.id, tasks[2].id)
 
     @requires_django_user_context
-    def test_created_gherkin_results_can_be_navigated(self):
+    def test_completed_tasks_can_be_aggregated(self):
 
-        request = IfcValidationRequest.objects.create(file_name='test7.ifc', file='test7.ifc')
+        request = IfcValidationRequest.objects.create(file_name='test5.ifc', file='test5.ifc')
         task1 = IfcValidationTask.objects.create(request=request)
         task2 = IfcValidationTask.objects.create(request=request)
-        gherkin_result1 = IfcGherkinTaskResult.objects.create(request=request, task=task1, feature="RUL001 - Rule Description")
-        gherkin_result2 = IfcGherkinTaskResult.objects.create(request=request, task=task1, feature="RUL002 - Rule Description")
-        gherkin_result3 = IfcGherkinTaskResult.objects.create(request=request, task=task1, feature="RUL003 - Rule Description")
-        gherkin_result4 = IfcGherkinTaskResult.objects.create(request=request, task=task2, feature="RUL001 - Rule Description")
+        task3 = IfcValidationTask.objects.create(request=request)
+        task4 = IfcValidationTask.objects.create(request=request)
 
-        all_results = IfcGherkinTaskResult.objects.all()
-        task1_results = IfcGherkinTaskResult.objects.filter(request__id=request.id).filter(task__id=task1.id)
-        task2_results = IfcGherkinTaskResult.objects.filter(request__id=request.id).filter(task__id=task2.id)
+        task1.mark_as_initiated()
+        task2.mark_as_initiated()
+        task3.mark_as_initiated()
+        task4.mark_as_initiated()
 
-        self.assertEqual(all_results.count(), 4)
-        self.assertEqual(task1_results.count(), 3)
-        self.assertEqual(task2_results.count(), 1)
-        self.assertEqual(gherkin_result1.request.id, request.id)
-        self.assertEqual(gherkin_result1.task.id, task1.id)
-        self.assertEqual(gherkin_result1.id, task1_results[0].id)
-        self.assertEqual(gherkin_result2.request.id, request.id)
-        self.assertEqual(gherkin_result2.task.id, task1.id)
-        self.assertEqual(gherkin_result2.id, task1_results[1].id)
-        self.assertEqual(gherkin_result3.request.id, request.id)
-        self.assertEqual(gherkin_result3.task.id, task1.id)
-        self.assertEqual(gherkin_result3.id, task1_results[2].id)
-        self.assertEqual(gherkin_result4.request.id, request.id)
-        self.assertEqual(gherkin_result4.task.id, task2.id)
-        self.assertEqual(gherkin_result4.id, task2_results[0].id)
+        sleep(2)
+
+        task1.mark_as_completed()
+        task2.mark_as_completed()
+
+        sleep(1)
+
+        task3.mark_as_completed()
+
+        self.assertTrue(request.duration >= 3)
+
+        sleep(2)
+
+        task4.mark_as_completed()
+
+        self.assertTrue(request.duration >= 5)
 
     @requires_django_user_context
     def test_newly_created_tool_and_model_can_be_navigated(self):
@@ -154,3 +156,48 @@ class IfcValidationAppTestCase(TestCase):
         self.assertEqual(model.uploaded_by.username, user.username)
         self.assertEqual(user.models.count(), 2)
         self.assertEqual(user.models.all()[1].file_name, model2.file_name)
+
+    @requires_django_user_context
+    def test_find_tool_by_full_name_should_succeed(self):
+
+        company1 = IfcCompany.objects.create(name='Acme Inc.')
+        tool1 = IfcAuthoringTool.objects.create(name='Tool ABC', version='1.0', company=company1)
+        tool2 = IfcAuthoringTool.objects.create(name='Tool ABC', version='2.0-alpha', company=company1)
+
+        company2 = IfcCompany.objects.create(name='PyCAD Limited')
+        tool3 = IfcAuthoringTool.objects.create(name='App', version=None, company=company2)
+        tool4 = IfcAuthoringTool.objects.create(name='App', version='2024', company=company2)
+
+        name_to_find = 'Acme Inc. Tool ABC - 1.0'
+        found_tool = IfcAuthoringTool.find_by_full_name(name_to_find)
+        self.assertIsNotNone(found_tool)
+        self.assertIsInstance(found_tool, IfcAuthoringTool)
+        self.assertEqual(found_tool.name, tool1.name)
+
+        name_to_find = 'Acme Inc. Tool ABC 1.0'
+        found_tool = IfcAuthoringTool.find_by_full_name(name_to_find)
+        self.assertIsNotNone(found_tool)
+        self.assertIsInstance(found_tool, IfcAuthoringTool)
+        self.assertEqual(found_tool.name, tool1.name)
+
+        name_to_find = 'PyCAD Limited'
+        found_tool = IfcAuthoringTool.find_by_full_name(name_to_find)
+        self.assertIsNone(found_tool)
+
+        name_to_find = 'PyCAD Limited App'
+        found_tool = IfcAuthoringTool.find_by_full_name(name_to_find)
+        self.assertIsNotNone(found_tool)
+        self.assertIsInstance(found_tool, IfcAuthoringTool)
+        self.assertEqual(found_tool.name, tool3.name)
+
+        name_to_find = 'PyCAD Limited App 2024'
+        found_tool = IfcAuthoringTool.find_by_full_name(name_to_find)
+        self.assertIsNotNone(found_tool)
+        self.assertIsInstance(found_tool, IfcAuthoringTool)
+        self.assertEqual(found_tool.name, tool4.name)
+
+        name_to_find = 'PyCAD Limited App 2020'
+        found_tool = IfcAuthoringTool.find_by_full_name(name_to_find)
+        self.assertIsNone(found_tool)
+
+

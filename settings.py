@@ -9,7 +9,7 @@ load_dotenv()
 DJANGO_DB_USER_CONTEXT = os.environ.get("DJANGO_DB_USER_CONTEXT", "SYSTEM")
 
 # timeout for each subprocess
-TASK_TIMEOUT_LIMIT = float(os.environ.get("TASK_TIMEOUT_LIMIT", 9 * 60))  # 9 min
+TASK_TIMEOUT_LIMIT = float(os.environ.get("TASK_TIMEOUT_LIMIT", 90 * 60))  # 90 min
 
 # location where files are physically stored
 MEDIA_ROOT = os.environ.get('MEDIA_ROOT', '/files_storage')
