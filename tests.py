@@ -28,7 +28,8 @@ class IfcValidationAppTestCase(TestCase):
 
         request = IfcValidationRequest.objects.create(
             file_name='test.ifc',
-            file='test.ifc'
+            file='test.ifc', 
+            size=1024
         )
 
         request2 = IfcValidationRequest.objects.get(id=request.id)
@@ -40,7 +41,8 @@ class IfcValidationAppTestCase(TestCase):
 
         request = IfcValidationRequest.objects.create(
             file_name='test2.ifc',
-            file='test2.ifc'
+            file='test2.ifc', 
+            size=1024
         )
 
         request2 = IfcValidationRequest.objects.get(id=request.id)
@@ -56,7 +58,8 @@ class IfcValidationAppTestCase(TestCase):
 
         request = IfcValidationRequest.objects.create(
             file_name='test3.ifc',
-            file='test3.ifc'
+            file='test3.ifc',
+            size=1024
         )
 
         request2 = IfcValidationRequest.objects.get(id=request.id)
@@ -74,7 +77,8 @@ class IfcValidationAppTestCase(TestCase):
 
         request = IfcValidationRequest.objects.create(
             file_name='test4.ifc',
-            file='test4.ifc'
+            file='test4.ifc',
+            size=1024
         )
 
         task = IfcValidationTask.objects.create(
@@ -88,12 +92,12 @@ class IfcValidationAppTestCase(TestCase):
     @requires_django_user_context
     def test_created_tasks_can_be_navigated(self):
 
-        request = IfcValidationRequest.objects.create(file_name='test5.ifc', file='test5.ifc')
+        request = IfcValidationRequest.objects.create(file_name='test5.ifc', file='test5.ifc', size=1024)
         task1 = IfcValidationTask.objects.create(request=request)
         task2 = IfcValidationTask.objects.create(request=request)
         task3 = IfcValidationTask.objects.create(request=request)
 
-        request2 = IfcValidationRequest.objects.create(file_name='test6.ifc', file='test6.ifc')
+        request2 = IfcValidationRequest.objects.create(file_name='test6.ifc', file='test6.ifc', size=1024)
         IfcValidationTask.objects.create(request=request2)
         IfcValidationTask.objects.create(request=request2)
 
@@ -105,37 +109,6 @@ class IfcValidationAppTestCase(TestCase):
         self.assertEqual(task1.id, tasks[0].id)
         self.assertEqual(task2.id, tasks[1].id)
         self.assertEqual(task3.id, tasks[2].id)
-
-    @requires_django_user_context
-    def test_completed_tasks_can_be_aggregated(self):
-
-        request = IfcValidationRequest.objects.create(file_name='test5.ifc', file='test5.ifc')
-        task1 = IfcValidationTask.objects.create(request=request)
-        task2 = IfcValidationTask.objects.create(request=request)
-        task3 = IfcValidationTask.objects.create(request=request)
-        task4 = IfcValidationTask.objects.create(request=request)
-
-        task1.mark_as_initiated()
-        task2.mark_as_initiated()
-        task3.mark_as_initiated()
-        task4.mark_as_initiated()
-
-        sleep(2)
-
-        task1.mark_as_completed()
-        task2.mark_as_completed()
-
-        sleep(1)
-
-        task3.mark_as_completed()
-
-        self.assertTrue(request.duration >= 3)
-
-        sleep(2)
-
-        task4.mark_as_completed()
-
-        self.assertTrue(request.duration >= 5)
 
     @requires_django_user_context
     def test_newly_created_tool_and_model_can_be_navigated(self):
@@ -200,4 +173,43 @@ class IfcValidationAppTestCase(TestCase):
         found_tool = IfcAuthoringTool.find_by_full_name(name_to_find)
         self.assertIsNone(found_tool)
 
+    @requires_django_user_context
+    def test_find_tool_by_full_name_should_succeed2(self):
+
+        tool1 = IfcAuthoringTool.objects.create(name='Test Application', version='0.10')        
+
+        name_to_find = 'Test Application 0.10'
+
+        found_tool = IfcAuthoringTool.find_by_full_name(name_to_find)
+        self.assertIsNotNone(found_tool)
+        self.assertIsInstance(found_tool, IfcAuthoringTool)
+        self.assertEqual(found_tool.name, tool1.name)
+
+        tool2 = IfcAuthoringTool.objects.create(name='Test Application', version='2023-01')        
+
+        name_to_find = 'Test Application - 2023-01'
+
+        found_tool = IfcAuthoringTool.find_by_full_name(name_to_find)
+        self.assertIsNotNone(found_tool)
+        self.assertIsInstance(found_tool, IfcAuthoringTool)
+        self.assertEqual(found_tool.name, tool2.name)
+
+    @requires_django_user_context
+    def test_model_can_navigate_back_to_request(self):
+        
+        request = IfcValidationRequest.objects.create(file_name='test.ifc', file='test.ifc', size=1024)
+        
+        model, _ =  IfcModel.objects.get_or_create(
+            file_name = request.file_name,
+            file = request.file,
+            size = 0,
+            uploaded_by = request.created_by
+        )
+        request.model = model
+        request.save()
+
+        request2 = IfcValidationRequest.objects.get(id=request.id)
+        self.assertIsNotNone(request2.model)
+        self.assertEqual(request.id, model.request.id)
+        self.assertEqual(request2.id, model.request.id)
 

@@ -1,8 +1,6 @@
 import threading
-import math
 
 from django.db import models
-from django.db.models import Min, Max
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
@@ -151,7 +149,7 @@ class IfcAuthoringTool(AuditedBaseModel):
 
     company = models.ForeignKey(
         to=IfcCompany,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name='company',
         null=True,
         blank=True,
@@ -202,14 +200,14 @@ class IfcAuthoringTool(AuditedBaseModel):
         else:
             return f'{full_name_without_version} - {self.version}'.strip()
             
-    def find_by_full_name(full_name):       
+    def find_by_full_name(full_name):
         """
         Look for the Authoring Tool(s) within the Company/Authoring Tool hierarchy.
         Fallback to matching records without versions, dashes and/or company.
         """
 
         def full_name_without_version_dash(full_name):
-            without_version = full_name.rpartition('-')  # last dash only
+            without_version = full_name.rpartition(' - ')  # last dash only
             return '{} {}'.format(without_version[0].strip(), without_version[2].strip())
         
         def matches(obj, full_name):
@@ -242,6 +240,7 @@ class IfcModel(AuditedBaseModel):
         """
         The license of a Model.
         """
+        UNKNOWN       = 'UNKNOWN', 'Unknown'
         PRIVATE       = 'PRIVATE', 'Private'
         CC            = 'CC',      'CC'
         MIT           = 'MIT',     'MIT'
@@ -255,7 +254,7 @@ class IfcModel(AuditedBaseModel):
 
     produced_by = models.ForeignKey(
         to=IfcAuthoringTool,
-        on_delete=models.RESTRICT,
+        on_delete=models.SET_NULL,
         related_name='models',
         null=True,
         blank=True,
@@ -304,7 +303,7 @@ class IfcModel(AuditedBaseModel):
     license = models.CharField(
         max_length=7,
         choices=License.choices,
-        default=License.PRIVATE,
+        default=License.UNKNOWN,
         db_index=True,
         null=False,
         blank=False,
@@ -447,23 +446,6 @@ class IfcModel(AuditedBaseModel):
 
         return f'#{self.id} - {self.created.date()} - {self.file_name}'
 
-    @property
-    def size_text(self):
-        """
-        Returns the size of the Model in more human friendly text (eg. 5 KB)
-        """
-        if self.size is None:
-            return 'unknown'
-        if self.size == 0:
-            return '0 B'
-        
-        size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
-        i = int(math.floor(math.log(self.size, 1024)))
-        p = math.pow(1024, i)
-        s = round(self.size / p, 2) if self.size > 1024 else self.size
-        
-        return f"{s} {size_name[i]}"
-
 
 class IfcModelInstance(AuditedBaseModel):
     """
@@ -548,6 +530,11 @@ class IfcValidationRequest(AuditedBaseModel):
         help_text="Path of the file."
     )
 
+    size = models.PositiveIntegerField(
+        null=False,
+        help_text="Size of the file (bytes)"
+    )
+
     status = models.CharField(
         max_length=10,
         choices=Status.choices,
@@ -564,6 +551,20 @@ class IfcValidationRequest(AuditedBaseModel):
         help_text="Reason for current status."
     )
 
+    started = models.DateTimeField(
+        null=True,
+        db_index=True,
+        verbose_name='started',
+        help_text="Timestamp the Validation Request was started."
+    )
+
+    completed = models.DateTimeField(
+        null=True,
+        db_index=True,
+        verbose_name='completed',
+        help_text="Timestamp the Validation Request completed."
+    )
+
     progress = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
@@ -571,10 +572,10 @@ class IfcValidationRequest(AuditedBaseModel):
         help_text="Overall progress (%) of the Validation Request."
     )
 
-    model = models.ForeignKey(
+    model = models.OneToOneField(
         to=IfcModel,
-        on_delete=models.RESTRICT,
-        related_name='requests',
+        on_delete=models.CASCADE,
+        related_name='request',
         null=True,
         db_index=True,
         help_text='What Model is created based on this Validation Request.'
@@ -606,23 +607,23 @@ class IfcValidationRequest(AuditedBaseModel):
     @property
     def duration(self):
 
-        min = IfcValidationTask.objects.filter(request__id=self.id).aggregate(Min("started"))['started__min']
-        max = IfcValidationTask.objects.filter(request__id=self.id).aggregate(Max("ended"))['ended__max']
-
-        if min is not None and max is not None:
-            diff = max - min
-            return diff.total_seconds()
+        if self.started and self.completed:
+            return (self.completed - self.started)
+        elif self.started:
+            return (timezone.now() - self.started)
         else:
             return None
 
-    def mark_as_initiated(self):
+    def mark_as_initiated(self, reason=None):
 
         self.status = self.Status.INITIATED
+        self.status_reason = reason
         self.started = timezone.now()
+        self.completed = None
         self.progress = 0
         self.save()
 
-    def mark_as_completed(self, reason):
+    def mark_as_completed(self, reason=None):
 
         self.status = self.Status.COMPLETED
         self.status_reason = reason
@@ -630,14 +631,14 @@ class IfcValidationRequest(AuditedBaseModel):
         self.progress = 100
         self.save()
 
-    def mark_as_failed(self, reason):
+    def mark_as_failed(self, reason=None):
 
         self.status = self.Status.FAILED
         self.status_reason = reason
         self.completed = timezone.now()
         self.save()
 
-    def mark_as_pending(self, reason):
+    def mark_as_pending(self, reason=None):
         
         self.status = self.Status.PENDING
         self.status_reason = reason
@@ -776,6 +777,8 @@ class IfcValidationTask(AuditedBaseModel):
 
         if self.started and self.ended:
             return (self.ended - self.started)
+        elif self.started:
+            return (timezone.now() - self.started)
         else:
             return None
 
@@ -783,6 +786,7 @@ class IfcValidationTask(AuditedBaseModel):
 
         self.status = self.Status.INITIATED
         self.started = timezone.now()
+        self.ended = None
         self.progress = 0
         self.save()
 
