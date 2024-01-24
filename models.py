@@ -31,7 +31,7 @@ def get_user_context():
         raise ImproperlyConfigured(msg)
 
 
-class AuditBaseQuerySet(models.query.QuerySet):
+class TimestampedBaseQuerySet(models.query.QuerySet):
     """
     An abstract QuerySet that provides self-updating created & modified fields.
     """
@@ -48,9 +48,9 @@ class AuditBaseQuerySet(models.query.QuerySet):
         super().update(*args, **kwargs)
 
 
-class AuditedBaseModel(models.Model):
+class TimestampedBaseModel(models.Model):
     """
-    An abstract Model that provides self-updating created and modified fields.
+    An abstract Model that provides self-updating created and updated fields.
     Note: these fields are by default not shown in eg. Django Admin.
     """
 
@@ -59,12 +59,59 @@ class AuditedBaseModel(models.Model):
         null=False,
         help_text='Timestamp this instance was created.'
     )
+
     updated = models.DateTimeField(
         # don't use auto_add; as this will also be set on creation of this instance - see save()
         null=True,
         blank=True,
         help_text='Timestamp this instance was last updated.'
     )
+
+    objects = TimestampedBaseQuerySet.as_manager()
+
+    # TODO - add soft delete flag and method + manager?
+    # see https://sunscrapers.com/blog/building-better-django-models-6-expert-tips
+
+    class Meta:
+        abstract = True
+
+        # ordered in reverse-chronological order by default
+        ordering = ['-created', '-updated']
+
+    def save(self, *args, **kwargs):
+
+        # create vs update
+        if not self.id:
+            pass
+        else:
+            self.updated = timezone.now()
+
+        super().save(*args, **kwargs)
+
+
+class AuditBaseQuerySet(TimestampedBaseQuerySet):
+    """
+    An abstract QuerySet that provides self-updating created by & updated by fields.
+    """
+
+    class Meta:
+        abstract = True
+
+    def update(self, *args, **kwargs):
+
+        # see: https://docs.djangoproject.com/en/dev/topics/db/queries/#updating-multiple-objects-at-once
+        for item in self:
+            item.save()
+
+        super().update(*args, **kwargs)
+
+
+class AuditedBaseModel(TimestampedBaseModel):
+    """
+    An abstract Model that provides self-updating created/created by and updated/updated by fields.
+    Note: these fields are by default not shown in eg. Django Admin.
+    """
+
     created_by = models.ForeignKey(
         to=settings.AUTH_USER_MODEL,
         on_delete=models.RESTRICT,
@@ -73,6 +120,7 @@ class AuditedBaseModel(models.Model):
         db_index=True,
         help_text='Who created this instance'
     )
+
     updated_by = models.ForeignKey(
         to=settings.AUTH_USER_MODEL,
         on_delete=models.RESTRICT,
@@ -91,9 +139,6 @@ class AuditedBaseModel(models.Model):
     class Meta:
         abstract = True
 
-        # ordered in reverse-chronological order by default
-        ordering = ['-created', '-updated']
-
     def save(self, *args, **kwargs):
 
         user = get_user_context()
@@ -108,7 +153,7 @@ class AuditedBaseModel(models.Model):
         super().save(*args, **kwargs)
 
 
-class IfcCompany(AuditedBaseModel):
+class Company(TimestampedBaseModel):
     """
     A model to store and track Company information.
     """
@@ -137,7 +182,7 @@ class IfcCompany(AuditedBaseModel):
         return f'{self.name}'
 
 
-class IfcAuthoringTool(AuditedBaseModel):
+class AuthoringTool(TimestampedBaseModel):
     """
     A model to store and track Authoring Tool information.
     """
@@ -148,7 +193,7 @@ class IfcAuthoringTool(AuditedBaseModel):
     )
 
     company = models.ForeignKey(
-        to=IfcCompany,
+        to=Company,
         on_delete=models.SET_NULL,
         related_name='company',
         null=True,
@@ -213,7 +258,7 @@ class IfcAuthoringTool(AuditedBaseModel):
         def matches(obj, full_name):
             return (full_name == obj.full_name or full_name == full_name_without_version_dash(obj.full_name))
         
-        found = [obj for obj in IfcAuthoringTool.objects.all() if matches(obj, full_name)] # cannot use a property to filter...
+        found = [obj for obj in AuthoringTool.objects.all() if matches(obj, full_name)] # cannot use a property to filter...
         
         if found is None or len(found) == 0:
             return None
@@ -221,9 +266,9 @@ class IfcAuthoringTool(AuditedBaseModel):
             return found[0]
         else:
             return found
-        
 
-class IfcModel(AuditedBaseModel):
+
+class Model(TimestampedBaseModel):
     """
     A model to store and track Models.
     """
@@ -253,7 +298,7 @@ class IfcModel(AuditedBaseModel):
     )
 
     produced_by = models.ForeignKey(
-        to=IfcAuthoringTool,
+        to=AuthoringTool,
         on_delete=models.SET_NULL,
         related_name='models',
         null=True,
@@ -447,7 +492,7 @@ class IfcModel(AuditedBaseModel):
         return f'#{self.id} - {self.created.date()} - {self.file_name}'
 
 
-class IfcModelInstance(AuditedBaseModel):
+class ModelInstance(TimestampedBaseModel):
     """
     A model to store and track Model Instances.
     """
@@ -458,7 +503,7 @@ class IfcModelInstance(AuditedBaseModel):
     )
 
     model = models.ForeignKey(
-        to=IfcModel,
+        to=Model,
         on_delete=models.CASCADE,
         related_name='instances',
         blank=False,
@@ -498,7 +543,7 @@ class IfcModelInstance(AuditedBaseModel):
         return f'#{self.id} - {self.ifc_type} - {self.model.file_name}'
 
 
-class IfcValidationRequest(AuditedBaseModel):
+class ValidationRequest(AuditedBaseModel):
     """
     A model to store and track Validation Requests.
     """
@@ -573,7 +618,7 @@ class IfcValidationRequest(AuditedBaseModel):
     )
 
     model = models.OneToOneField(
-        to=IfcModel,
+        to=Model,
         on_delete=models.CASCADE,
         related_name='request',
         null=True,
@@ -639,16 +684,16 @@ class IfcValidationRequest(AuditedBaseModel):
         self.save()
 
     def mark_as_pending(self, reason=None):
-        
+
         self.status = self.Status.PENDING
         self.status_reason = reason
         self.progress = 0
         self.started = None
         self.ended = None
         self.save()
-    
 
-class IfcValidationTask(AuditedBaseModel):
+
+class ValidationTask(TimestampedBaseModel):
     """
     A model to store and track Validation Tasks.
     """
@@ -684,7 +729,7 @@ class IfcValidationTask(AuditedBaseModel):
     )
 
     request = models.ForeignKey(
-        to=IfcValidationRequest,
+        to=ValidationRequest,
         on_delete=models.CASCADE,
         related_name='tasks',
         blank=False,
@@ -818,7 +863,7 @@ class IfcValidationTask(AuditedBaseModel):
         self.save()
 
 
-class IfcValidationOutcome(AuditedBaseModel):
+class ValidationOutcome(TimestampedBaseModel):
     """
     A model to store and track Validation Outcome instances.
     """
@@ -839,7 +884,7 @@ class IfcValidationOutcome(AuditedBaseModel):
     )
 
     instance = models.ForeignKey(
-        to=IfcModelInstance,
+        to=ModelInstance,
         on_delete=models.CASCADE,
         related_name='outcomes',
         null=True,
@@ -848,7 +893,7 @@ class IfcValidationOutcome(AuditedBaseModel):
     )
 
     validation_task = models.ForeignKey(
-        to=IfcValidationTask,
+        to=ValidationTask,
         on_delete=models.CASCADE,
         related_name='outcomes',
         blank=False,
@@ -904,4 +949,3 @@ class IfcValidationOutcome(AuditedBaseModel):
     def __str__(self):
 
         return f'#{self.id} - {self.feature} - v{self.feature_version} - {self.severity}'
-
