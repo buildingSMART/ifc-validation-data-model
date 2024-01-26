@@ -829,6 +829,57 @@ class IfcValidationOutcome(AuditedBaseModel):
         ERROR                  = 4, 'Error'
         NOT_APPLICABLE         = 0, 'N/A'
 
+    
+    class ValidationOutcomeCode(models.TextChoices):
+        PASSED = "P00010", "Passed"
+        NOT_APPLICABLE = "N00010", "Not Applicable"
+        SYNTAX_ERROR = "E00001", "Syntax Error"
+        TYPE_ERROR = "E00010", "Type Error"
+        VALUE_ERROR = "E00020", "Value Error"
+        GEOMETRY_ERROR = "E00030", "Geometry Error"
+        CARDINALITY_ERROR = "E00040", "Cardinality Error"
+        DUPLICATE_ERROR = "E00050", "Duplicate Error"
+        PLACEMENT_ERROR = "E00060", "Placement Error"
+        UNITS_ERROR = "E00070", "Units Error"
+        QUANTITY_ERROR = "E00080", "Quantity Error"
+        ENUMERATED_VALUE_ERROR = "E00090", "Enumerated Value Error"
+        RELATIONSHIP_ERROR = "E00100", "Relationship Error"
+        NAMING_ERROR = "E00110", "Naming Error"
+        REFERENCE_ERROR = "E00120", "Reference Error"
+        RESOURCE_ERROR = "E00130", "Resource Error"
+        DEPRECATION_ERROR = "E00140", "Deprecation Error"
+        SHAPE_REPRESENTATION_ERROR = "E00150", "Shape Representation Error"
+        INSTANCE_STRUCTURE_ERROR = "E00160", "Instance Structure Error"
+        ALIGNMENT_CONTAINS_BUSINESS_LOGIC_ONLY = "W00010", "Alignment Contains Business Logic Only"
+        ALIGNMENT_CONTAINS_GEOMETRY_ONLY = "W00020", "Alignment Contains Geometry Only"
+        WARNING = "W00030", "Warning"
+        EXECUTED = "X00040", "Executed"
+
+    def determine_severity(self):
+        match self.name[0]:
+            case 'X':
+                return self.OutcomeSeverity.EXECUTED
+            case 'P':
+                return self.OutcomeSeverity.PASSED
+            case 'N':
+                return self.OutcomeSeverity.NOT_APPLICABLE
+            case 'W':
+                return self.OutcomeSeverity.WARNING
+            case 'E':
+                return self.OutcomeSeverity.ERROR
+            case _:
+                raise ValueError(f"Outcome code {self.name} not recognized")
+
+    _inst = None # temp internal-use attribute to store the instance of the model being validated for further use in behave statements
+
+    @property
+    def inst(self):
+        return self._inst
+    
+    @inst.setter
+    def inst(self, value):
+        self._inst = value
+
     id = models.AutoField(
         primary_key=True,
         help_text="Identifier of the validation outcome (auto-generated)."
@@ -876,6 +927,13 @@ class IfcValidationOutcome(AuditedBaseModel):
         help_text="Severity of the Validation Outcome."
     )
 
+    outcome_code = models.CharField(
+        max_length=10,
+        choices=ValidationOutcomeCode.choices,
+        default=ValidationOutcomeCode.NOT_APPLICABLE,
+        help_text="Code representing the outcome of the validation."
+    )
+
     expected = models.JSONField(
         null=True,
         blank=True,
@@ -899,5 +957,5 @@ class IfcValidationOutcome(AuditedBaseModel):
 
     def __str__(self):
 
-        return f'#{self.id} - {self.feature} - v{self.feature_version} - {self.severity}'
+        return f'# Expected value: {self.expected}. Observed value: {self.observed}.'
 
