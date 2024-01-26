@@ -819,7 +819,7 @@ class IfcValidationOutcome(AuditedBaseModel):
     A model to store and track Validation Outcome instances.
     """
 
-    class OutcomeSeverity(models.TextChoices):
+    class OutcomeSeverity(models.IntegerChoices):
         """
         The severity of an Validation Outcome.
         """
