@@ -1,8 +1,6 @@
 import threading
-import math
 
 from django.db import models
-from django.db.models import Min, Max
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
@@ -33,7 +31,7 @@ def get_user_context():
         raise ImproperlyConfigured(msg)
 
 
-class AuditBaseQuerySet(models.query.QuerySet):
+class TimestampedBaseQuerySet(models.query.QuerySet):
     """
     An abstract QuerySet that provides self-updating created & modified fields.
     """
@@ -50,9 +48,9 @@ class AuditBaseQuerySet(models.query.QuerySet):
         super().update(*args, **kwargs)
 
 
-class AuditedBaseModel(models.Model):
+class TimestampedBaseModel(models.Model):
     """
-    An abstract Model that provides self-updating created and modified fields.
+    An abstract Model that provides self-updating created and updated fields.
     Note: these fields are by default not shown in eg. Django Admin.
     """
 
@@ -61,12 +59,59 @@ class AuditedBaseModel(models.Model):
         null=False,
         help_text='Timestamp this instance was created.'
     )
+
     updated = models.DateTimeField(
         # don't use auto_add; as this will also be set on creation of this instance - see save()
         null=True,
         blank=True,
         help_text='Timestamp this instance was last updated.'
     )
+
+    objects = TimestampedBaseQuerySet.as_manager()
+
+    # TODO - add soft delete flag and method + manager?
+    # see https://sunscrapers.com/blog/building-better-django-models-6-expert-tips
+
+    class Meta:
+        abstract = True
+
+        # ordered in reverse-chronological order by default
+        ordering = ['-created', '-updated']
+
+    def save(self, *args, **kwargs):
+
+        # create vs update
+        if not self.id:
+            pass
+        else:
+            self.updated = timezone.now()
+
+        super().save(*args, **kwargs)
+
+
+class AuditBaseQuerySet(TimestampedBaseQuerySet):
+    """
+    An abstract QuerySet that provides self-updating created by & updated by fields.
+    """
+
+    class Meta:
+        abstract = True
+
+    def update(self, *args, **kwargs):
+
+        # see: https://docs.djangoproject.com/en/dev/topics/db/queries/#updating-multiple-objects-at-once
+        for item in self:
+            item.save()
+
+        super().update(*args, **kwargs)
+
+
+class AuditedBaseModel(TimestampedBaseModel):
+    """
+    An abstract Model that provides self-updating created/created by and updated/updated by fields.
+    Note: these fields are by default not shown in eg. Django Admin.
+    """
+
     created_by = models.ForeignKey(
         to=settings.AUTH_USER_MODEL,
         on_delete=models.RESTRICT,
@@ -75,6 +120,7 @@ class AuditedBaseModel(models.Model):
         db_index=True,
         help_text='Who created this instance'
     )
+
     updated_by = models.ForeignKey(
         to=settings.AUTH_USER_MODEL,
         on_delete=models.RESTRICT,
@@ -93,9 +139,6 @@ class AuditedBaseModel(models.Model):
     class Meta:
         abstract = True
 
-        # ordered in reverse-chronological order by default
-        ordering = ['-created', '-updated']
-
     def save(self, *args, **kwargs):
 
         user = get_user_context()
@@ -110,7 +153,7 @@ class AuditedBaseModel(models.Model):
         super().save(*args, **kwargs)
 
 
-class IfcCompany(AuditedBaseModel):
+class Company(TimestampedBaseModel):
     """
     A model to store and track Company information.
     """
@@ -139,7 +182,7 @@ class IfcCompany(AuditedBaseModel):
         return f'{self.name}'
 
 
-class IfcAuthoringTool(AuditedBaseModel):
+class AuthoringTool(TimestampedBaseModel):
     """
     A model to store and track Authoring Tool information.
     """
@@ -150,8 +193,8 @@ class IfcAuthoringTool(AuditedBaseModel):
     )
 
     company = models.ForeignKey(
-        to=IfcCompany,
-        on_delete=models.CASCADE,
+        to=Company,
+        on_delete=models.SET_NULL,
         related_name='company',
         null=True,
         blank=True,
@@ -201,31 +244,31 @@ class IfcAuthoringTool(AuditedBaseModel):
             return full_name_without_version
         else:
             return f'{full_name_without_version} - {self.version}'.strip()
-            
-    def find_by_full_name(full_name):       
+
+    def find_by_full_name(full_name):
         """
         Look for the Authoring Tool(s) within the Company/Authoring Tool hierarchy.
         Fallback to matching records without versions, dashes and/or company.
         """
 
         def full_name_without_version_dash(full_name):
-            without_version = full_name.rpartition('-')  # last dash only
+            without_version = full_name.rpartition(' - ')  # last dash only
             return '{} {}'.format(without_version[0].strip(), without_version[2].strip())
-        
+
         def matches(obj, full_name):
             return (full_name == obj.full_name or full_name == full_name_without_version_dash(obj.full_name))
-        
-        found = [obj for obj in IfcAuthoringTool.objects.all() if matches(obj, full_name)] # cannot use a property to filter...
-        
+
+        found = [obj for obj in AuthoringTool.objects.all() if matches(obj, full_name)] # cannot use a property to filter...
+
         if found is None or len(found) == 0:
             return None
         elif len(found) == 1:
             return found[0]
         else:
             return found
-        
 
-class IfcModel(AuditedBaseModel):
+
+class Model(TimestampedBaseModel):
     """
     A model to store and track Models.
     """
@@ -242,6 +285,7 @@ class IfcModel(AuditedBaseModel):
         """
         The license of a Model.
         """
+        UNKNOWN       = 'UNKNOWN', 'Unknown'
         PRIVATE       = 'PRIVATE', 'Private'
         CC            = 'CC',      'CC'
         MIT           = 'MIT',     'MIT'
@@ -254,8 +298,8 @@ class IfcModel(AuditedBaseModel):
     )
 
     produced_by = models.ForeignKey(
-        to=IfcAuthoringTool,
-        on_delete=models.RESTRICT,
+        to=AuthoringTool,
+        on_delete=models.SET_NULL,
         related_name='models',
         null=True,
         blank=True,
@@ -304,7 +348,7 @@ class IfcModel(AuditedBaseModel):
     license = models.CharField(
         max_length=7,
         choices=License.choices,
-        default=License.PRIVATE,
+        default=License.UNKNOWN,
         db_index=True,
         null=False,
         blank=False,
@@ -447,25 +491,8 @@ class IfcModel(AuditedBaseModel):
 
         return f'#{self.id} - {self.created.date()} - {self.file_name}'
 
-    @property
-    def size_text(self):
-        """
-        Returns the size of the Model in more human friendly text (eg. 5 KB)
-        """
-        if self.size is None:
-            return 'unknown'
-        if self.size == 0:
-            return '0 B'
-        
-        size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
-        i = int(math.floor(math.log(self.size, 1024)))
-        p = math.pow(1024, i)
-        s = round(self.size / p, 2) if self.size > 1024 else self.size
-        
-        return f"{s} {size_name[i]}"
 
-
-class IfcModelInstance(AuditedBaseModel):
+class ModelInstance(TimestampedBaseModel):
     """
     A model to store and track Model Instances.
     """
@@ -476,7 +503,7 @@ class IfcModelInstance(AuditedBaseModel):
     )
 
     model = models.ForeignKey(
-        to=IfcModel,
+        to=Model,
         on_delete=models.CASCADE,
         related_name='instances',
         blank=False,
@@ -516,7 +543,7 @@ class IfcModelInstance(AuditedBaseModel):
         return f'#{self.id} - {self.ifc_type} - {self.model.file_name}'
 
 
-class IfcValidationRequest(AuditedBaseModel):
+class ValidationRequest(AuditedBaseModel):
     """
     A model to store and track Validation Requests.
     """
@@ -548,6 +575,11 @@ class IfcValidationRequest(AuditedBaseModel):
         help_text="Path of the file."
     )
 
+    size = models.PositiveIntegerField(
+        null=False,
+        help_text="Size of the file (bytes)"
+    )
+
     status = models.CharField(
         max_length=10,
         choices=Status.choices,
@@ -564,6 +596,20 @@ class IfcValidationRequest(AuditedBaseModel):
         help_text="Reason for current status."
     )
 
+    started = models.DateTimeField(
+        null=True,
+        db_index=True,
+        verbose_name='started',
+        help_text="Timestamp the Validation Request was started."
+    )
+
+    completed = models.DateTimeField(
+        null=True,
+        db_index=True,
+        verbose_name='completed',
+        help_text="Timestamp the Validation Request completed."
+    )
+
     progress = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
@@ -571,10 +617,10 @@ class IfcValidationRequest(AuditedBaseModel):
         help_text="Overall progress (%) of the Validation Request."
     )
 
-    model = models.ForeignKey(
-        to=IfcModel,
-        on_delete=models.RESTRICT,
-        related_name='requests',
+    model = models.OneToOneField(
+        to=Model,
+        on_delete=models.CASCADE,
+        related_name='request',
         null=True,
         db_index=True,
         help_text='What Model is created based on this Validation Request.'
@@ -606,23 +652,23 @@ class IfcValidationRequest(AuditedBaseModel):
     @property
     def duration(self):
 
-        min = IfcValidationTask.objects.filter(request__id=self.id).aggregate(Min("started"))['started__min']
-        max = IfcValidationTask.objects.filter(request__id=self.id).aggregate(Max("ended"))['ended__max']
-
-        if min is not None and max is not None:
-            diff = max - min
-            return diff.total_seconds()
+        if self.started and self.completed:
+            return (self.completed - self.started)
+        elif self.started:
+            return (timezone.now() - self.started)
         else:
             return None
 
-    def mark_as_initiated(self):
+    def mark_as_initiated(self, reason=None):
 
         self.status = self.Status.INITIATED
+        self.status_reason = reason
         self.started = timezone.now()
+        self.completed = None
         self.progress = 0
         self.save()
 
-    def mark_as_completed(self, reason):
+    def mark_as_completed(self, reason=None):
 
         self.status = self.Status.COMPLETED
         self.status_reason = reason
@@ -630,24 +676,24 @@ class IfcValidationRequest(AuditedBaseModel):
         self.progress = 100
         self.save()
 
-    def mark_as_failed(self, reason):
+    def mark_as_failed(self, reason=None):
 
         self.status = self.Status.FAILED
         self.status_reason = reason
         self.completed = timezone.now()
         self.save()
 
-    def mark_as_pending(self, reason):
-        
+    def mark_as_pending(self, reason=None):
+
         self.status = self.Status.PENDING
         self.status_reason = reason
         self.progress = 0
         self.started = None
         self.ended = None
         self.save()
-    
 
-class IfcValidationTask(AuditedBaseModel):
+
+class ValidationTask(TimestampedBaseModel):
     """
     A model to store and track Validation Tasks.
     """
@@ -683,7 +729,7 @@ class IfcValidationTask(AuditedBaseModel):
     )
 
     request = models.ForeignKey(
-        to=IfcValidationRequest,
+        to=ValidationRequest,
         on_delete=models.CASCADE,
         related_name='tasks',
         blank=False,
@@ -776,6 +822,8 @@ class IfcValidationTask(AuditedBaseModel):
 
         if self.started and self.ended:
             return (self.ended - self.started)
+        elif self.started:
+            return (timezone.now() - self.started)
         else:
             return None
 
@@ -783,6 +831,7 @@ class IfcValidationTask(AuditedBaseModel):
 
         self.status = self.Status.INITIATED
         self.started = timezone.now()
+        self.ended = None
         self.progress = 0
         self.save()
 
@@ -814,7 +863,7 @@ class IfcValidationTask(AuditedBaseModel):
         self.save()
 
 
-class IfcValidationOutcome(AuditedBaseModel):
+class ValidationOutcome(TimestampedBaseModel):
     """
     A model to store and track Validation Outcome instances.
     """
@@ -829,13 +878,48 @@ class IfcValidationOutcome(AuditedBaseModel):
         ERROR                  = 4, 'Error'
         NOT_APPLICABLE         = 0, 'N/A'
 
+    class ValidationOutcomeCode(models.TextChoices):
+        """
+        A code representing a Validation Outcome.
+        """
+        PASSED                                 = "P00010", "Passed"
+        NOT_APPLICABLE                         = "N00010", "Not Applicable"
+
+        # errors
+        SYNTAX_ERROR                           = "E00001", "Syntax Error"
+        TYPE_ERROR                             = "E00010", "Type Error"
+        VALUE_ERROR                            = "E00020", "Value Error"
+        GEOMETRY_ERROR                         = "E00030", "Geometry Error"
+        CARDINALITY_ERROR                      = "E00040", "Cardinality Error"
+        DUPLICATE_ERROR                        = "E00050", "Duplicate Error"
+        PLACEMENT_ERROR                        = "E00060", "Placement Error"
+        UNITS_ERROR                            = "E00070", "Units Error"
+        QUANTITY_ERROR                         = "E00080", "Quantity Error"
+        ENUMERATED_VALUE_ERROR                 = "E00090", "Enumerated Value Error"
+        RELATIONSHIP_ERROR                     = "E00100", "Relationship Error"
+        NAMING_ERROR                           = "E00110", "Naming Error"
+        REFERENCE_ERROR                        = "E00120", "Reference Error"
+        RESOURCE_ERROR                         = "E00130", "Resource Error"
+        DEPRECATION_ERROR                      = "E00140", "Deprecation Error"
+        SHAPE_REPRESENTATION_ERROR             = "E00150", "Shape Representation Error"
+        INSTANCE_STRUCTURE_ERROR               = "E00160", "Instance Structure Error"
+
+        # warnings
+        ALIGNMENT_CONTAINS_BUSINESS_LOGIC_ONLY = "W00010", "Alignment Contains Business Logic Only"
+        ALIGNMENT_CONTAINS_GEOMETRY_ONLY       = "W00020", "Alignment Contains Geometry Only"
+        WARNING                                = "W00030", "Warning"
+        
+        EXECUTED                               = "X00040", "Executed"
+
+    _inst = None # temp internal-use attribute to store the instance of the model being validated for further use in behave statements
+
     id = models.AutoField(
         primary_key=True,
         help_text="Identifier of the validation outcome (auto-generated)."
     )
 
     instance = models.ForeignKey(
-        to=IfcModelInstance,
+        to=ModelInstance,
         on_delete=models.CASCADE,
         related_name='outcomes',
         null=True,
@@ -844,7 +928,7 @@ class IfcValidationOutcome(AuditedBaseModel):
     )
 
     validation_task = models.ForeignKey(
-        to=IfcValidationTask,
+        to=ValidationTask,
         on_delete=models.CASCADE,
         related_name='outcomes',
         blank=False,
@@ -876,6 +960,13 @@ class IfcValidationOutcome(AuditedBaseModel):
         help_text="Severity of the Validation Outcome."
     )
 
+    outcome_code = models.CharField(
+        max_length=10,
+        choices=ValidationOutcomeCode.choices,
+        default=ValidationOutcomeCode.NOT_APPLICABLE,
+        help_text="Code representing the Validation Outcome."
+    )
+
     expected = models.JSONField(
         null=True,
         blank=True,
@@ -899,5 +990,28 @@ class IfcValidationOutcome(AuditedBaseModel):
 
     def __str__(self):
 
-        return f'#{self.id} - {self.feature} - v{self.feature_version} - {self.severity}'
+        return f'# Expected value: {self.expected}. Observed value: {self.observed}.'
 
+    @property
+    def inst(self):
+        return self._inst
+
+    @inst.setter
+    def inst(self, value):
+        self._inst = value
+
+    def determine_severity(self):
+        
+        match self.name[0]:
+            case 'X':
+                return self.OutcomeSeverity.EXECUTED
+            case 'P':
+                return self.OutcomeSeverity.PASSED
+            case 'N':
+                return self.OutcomeSeverity.NOT_APPLICABLE
+            case 'W':
+                return self.OutcomeSeverity.WARNING
+            case 'E':
+                return self.OutcomeSeverity.ERROR
+            case _:
+                raise ValueError(f"Outcome code '{self.name}' not recognized")

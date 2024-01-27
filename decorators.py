@@ -55,3 +55,33 @@ def requires_django_user_context(func):
         return result
 
     return wrapper
+
+
+# instructs a function to require a full table lockß
+def requires_django_exclusive_table_lock(model, lock = 'ACCESS EXCLUSIVE'):
+    """
+    Decorator for PostgreSQL's table-level lock functionality 
+    
+    example:
+        @transaction.commit_on_success
+        @requires_django_exclusive_table_lock(MyModel)
+        def myview(request)
+            ...
+        
+    see:
+        Original source code:
+            https://www.caktusgroup.com/blog/2009/05/26/explicit-table-locking-with-postgresql-and-django/
+        PostgreSQL's LOCK Documentation:
+            https://www.postgresql.org/docs/9.4/static/explicit-locking.html
+    """
+    def require_lock_decorator(view_func):
+        def wrapper(*args, **kwargs):
+            from django.db import connection
+            cursor = connection.cursor()
+            cursor.execute(
+                'LOCK TABLE %s IN %s MODE' % (model._meta.db_table, lock)
+            )
+            return view_func(*args, **kwargs)
+        return wrapper
+    
+    return require_lock_decorator
