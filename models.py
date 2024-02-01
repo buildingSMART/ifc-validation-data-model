@@ -275,11 +275,13 @@ class Model(TimestampedBaseModel):
 
     class Status(models.TextChoices):
         """
-        The overall status of a Model.
+        The overall status of an individual Model component.
         """
-        VALID         = 'v', 'Valid'
-        INVALID       = 'i', 'Invalid'
-        NOT_VALIDATED = 'n', 'Not Validated'
+        VALID          = 'v', 'Valid'
+        INVALID        = 'i', 'Invalid'
+        NOT_VALIDATED  = 'n', 'Not Validated'
+        WARNING        = 'w', 'Warning'
+        NOT_APPLICABLE = '-', 'Not Applicable'
 
     class License(models.TextChoices):
         """
@@ -467,6 +469,16 @@ class Model(TimestampedBaseModel):
         help_text="Status of the Industry Practices Validation."
     )
 
+    status_prereq = models.CharField(
+        max_length=1,
+        choices=Status.choices,
+        default=Status.NOT_VALIDATED,
+        db_index=True,
+        null=False,
+        blank=False,
+        help_text="Status of the Prerequisites Validation."
+    )
+
     uploaded_by = models.ForeignKey(
         to=settings.AUTH_USER_MODEL,
         on_delete=models.RESTRICT,
@@ -491,6 +503,18 @@ class Model(TimestampedBaseModel):
 
         return f'#{self.id} - {self.created.date()} - {self.file_name}'
 
+    def reset_status(self):
+
+        self.status_bsdd = Model.Status.NOT_VALIDATED
+        self.status_ia = Model.Status.NOT_VALIDATED
+        self.status_ip = Model.Status.NOT_VALIDATED
+        self.status_ids = Model.Status.NOT_VALIDATED
+        self.status_mvd = Model.Status.NOT_VALIDATED
+        self.status_schema = Model.Status.NOT_VALIDATED
+        self.status_syntax = Model.Status.NOT_VALIDATED
+        self.status_industry_practices = Model.Status.NOT_VALIDATED
+        self.status_prereq = Model.Status.NOT_VALIDATED
+        self.save()
 
 class ModelInstance(TimestampedBaseModel):
     """
@@ -512,15 +536,15 @@ class ModelInstance(TimestampedBaseModel):
         help_text='What Model this Model Instance is a part of.'
     )
 
-    stepfile_id = models.PositiveSmallIntegerField(
+    stepfile_id = models.PositiveBigIntegerField(
         null=False,
         blank=False,
         db_index=True,
-        help_text='TBC (???)'
+        help_text='id assigned within the Step File (eg. #11)'
     )
 
     ifc_type = models.CharField(
-        max_length=25,
+        max_length=50,
         null=False,
         blank=False,
         db_index=True,
@@ -683,6 +707,14 @@ class ValidationRequest(AuditedBaseModel):
         self.completed = timezone.now()
         self.save()
 
+    def mark_as_warning(self, reason=None):
+
+        self.status = self.Status.FAILED
+        self.status_reason = reason
+        self.completed = timezone.now()
+        self.progress = 100
+        self.save()
+
     def mark_as_pending(self, reason=None):
 
         self.status = self.Status.PENDING
@@ -703,14 +735,14 @@ class ValidationTask(TimestampedBaseModel):
         The type of an Validation Task.
         """
         SYNTAX              = 'SYNTAX', 'STEP Physical File Syntax'
-        SCHEMA              = 'SCHEMA', 'Schema (Express language)'
+        SCHEMA              = 'SCHEMA', 'Schema (EXPRESS language)'
         MVD                 = 'MVD', 'Model View Definitions'
-        BSDD                = 'BSDD', 'Requirements per bSDD Classification'
+        BSDD                = 'BSDD', 'bSDD Compliance'
         PARSE_INFO          = 'INFO', 'Parse Info'
         PREREQUISITES       = 'PREREQ', 'Prerequisites'
-        NORMATIVE_IA        = 'NORMATIVE_IA', 'Normative Rules - Implementer Agreements (IA)'
-        NORMATIVE_IP        = 'NORMATIVE_IP', 'Normative Rules - Informal Propositions (IP)'
-        INDUSTRY_PRACTICES  = 'INDUSTRY', 'Industry Practices (TBC)'
+        NORMATIVE_IA        = 'NORMATIVE_IA', 'Implementer Agreements (IA)'
+        NORMATIVE_IP        = 'NORMATIVE_IP', 'Informal Propositions (IP)'
+        INDUSTRY_PRACTICES  = 'INDUSTRY', 'Industry Practices'
 
     class Status(models.TextChoices):
         """
@@ -887,6 +919,7 @@ class ValidationOutcome(TimestampedBaseModel):
 
         # errors
         SYNTAX_ERROR                           = "E00001", "Syntax Error"
+        SCHEMA_ERROR                           = "E00002", "Schema Error"
         TYPE_ERROR                             = "E00010", "Type Error"
         VALUE_ERROR                            = "E00020", "Value Error"
         GEOMETRY_ERROR                         = "E00030", "Geometry Error"
@@ -915,7 +948,7 @@ class ValidationOutcome(TimestampedBaseModel):
 
     id = models.AutoField(
         primary_key=True,
-        help_text="Identifier of the validation outcome (auto-generated)."
+        help_text="Identifier of the Validation Outcome (auto-generated)."
     )
 
     instance = models.ForeignKey(
