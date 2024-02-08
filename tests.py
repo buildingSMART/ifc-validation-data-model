@@ -1,8 +1,6 @@
 import datetime
-from time import sleep
 
 from django.test import TestCase
-from django.utils import timezone
 from django.contrib.auth.models import User
 
 from apps.ifc_validation_models.models import ValidationRequest, ValidationTask  # TODO: for now needs to be absolute!
@@ -10,7 +8,7 @@ from apps.ifc_validation_models.models import Company, AuthoringTool, Model
 from apps.ifc_validation_models.decorators import requires_django_user_context
 
 
-class ValidationAppTestCase(TestCase):
+class ValidationModelsTestCase(TestCase):
 
     @classmethod
     def setUpTestData(cls):
@@ -195,6 +193,18 @@ class ValidationAppTestCase(TestCase):
         self.assertEqual(found_tool.name, tool2.name)
 
     @requires_django_user_context
+    def test_find_tool_by_full_name_should_succeed3(self):
+
+        tool1 = AuthoringTool.objects.create(name='IfcOpenShell-v0.7.0-6c9e130ca', version='v0.7.0-6c9e130ca')        
+
+        name_to_find = 'IfcOpenShell-v0.7.0-6c9e130ca v0.7.0-6c9e130ca'
+
+        found_tool = AuthoringTool.find_by_full_name(name_to_find)
+        self.assertIsNotNone(found_tool)
+        self.assertIsInstance(found_tool, AuthoringTool)
+        self.assertEqual(found_tool.name, tool1.name)
+
+    @requires_django_user_context
     def test_model_can_navigate_back_to_request(self):
         
         request = ValidationRequest.objects.create(file_name='test.ifc', file='test.ifc', size=1024)
@@ -212,4 +222,28 @@ class ValidationAppTestCase(TestCase):
         self.assertIsNotNone(request2.model)
         self.assertEqual(request.id, model.request.id)
         self.assertEqual(request2.id, model.request.id)
+
+    @requires_django_user_context
+    def test_task_can_navigate_back_to_model(self):
+        
+        # arrange
+        request = ValidationRequest.objects.create(file_name='test.ifc', file='test.ifc', size=1024)        
+        task = ValidationTask.objects.create(request=request, type=ValidationTask.Type.PARSE_INFO)
+        model, _ =  Model.objects.get_or_create(
+            file_name = request.file_name,
+            file = request.file,
+            size = request.size,
+            uploaded_by = request.created_by
+        )
+        request.model = model
+        request.save()
+
+        # act
+        retrieved_task = ValidationTask.objects.get(id=task.id)
+        retrieved_model = retrieved_task.request.model
+        model_id = retrieved_model.id
+
+        # assert
+        self.assertIsNotNone(retrieved_task)
+        self.assertEqual(model.id, model_id)
 
