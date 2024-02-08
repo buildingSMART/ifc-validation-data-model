@@ -894,6 +894,30 @@ class ValidationTask(TimestampedBaseModel):
         self.process_cmd = cmd
         self.save()
 
+    def determine_aggregate_status(self):
+        """
+        Aggregates Severity of all Outcomes into one final Status value.
+        """
+        
+        agg_status = None
+        for outcome in self.outcomes.iterator():
+            if outcome.severity == ValidationOutcome.OutcomeSeverity.NOT_APPLICABLE and agg_status is None:
+                agg_status = Model.Status.NOT_APPLICABLE
+            elif outcome.severity == ValidationOutcome.OutcomeSeverity.EXECUTED and agg_status in [None, Model.Status.NOT_APPLICABLE]:
+                agg_status = Model.Status.VALID
+            elif outcome.severity == ValidationOutcome.OutcomeSeverity.PASSED and agg_status in [None, Model.Status.NOT_APPLICABLE]:
+                agg_status = Model.Status.VALID
+            elif outcome.severity == ValidationOutcome.OutcomeSeverity.WARNING:
+                agg_status = Model.Status.WARNING
+            elif outcome.severity == ValidationOutcome.OutcomeSeverity.ERROR:
+                agg_status = Model.Status.INVALID
+                break # can't get any worse...
+
+        # assume valid if no outcomes - TODO: is this correct?
+        if agg_status is None:
+            agg_status = Model.Status.VALID
+
+        return agg_status
 
 class ValidationOutcome(TimestampedBaseModel):
     """
