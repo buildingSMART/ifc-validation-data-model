@@ -743,6 +743,7 @@ class ValidationTask(TimestampedBaseModel):
         NORMATIVE_IA        = 'NORMATIVE_IA', 'Implementer Agreements (IA)'
         NORMATIVE_IP        = 'NORMATIVE_IP', 'Informal Propositions (IP)'
         INDUSTRY_PRACTICES  = 'INDUSTRY', 'Industry Practices'
+        INSTANCE_COMPLETION = 'INST_COMPLETION', 'Instance Completion'
 
     class Status(models.TextChoices):
         """
