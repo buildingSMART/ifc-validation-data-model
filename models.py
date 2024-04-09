@@ -286,7 +286,7 @@ class AuthoringTool(TimestampedBaseModel):
             return found
 
 
-class Model(TimestampedBaseModel):
+class Model(TimestampedBaseModel, IdObfuscator):
     """
     A model to store and track Models.
     """
@@ -356,13 +356,6 @@ class Model(TimestampedBaseModel):
     size = models.PositiveIntegerField(
         null=False,
         help_text="Size of the model (bytes)"
-    )
-    
-    # TODO - not sure what this field is used for
-    hours = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="TBC (???)"        
     )
 
     license = models.CharField(
@@ -700,6 +693,10 @@ class ValidationRequest(AuditedBaseModel, IdObfuscator):
             return (timezone.now() - self.started)
         else:
             return None
+        
+    @property
+    def model_public_id(self):
+        return IdObfuscator.to_public_id(self.model_id, override_cls=Model) if self.model_id else None
 
     def mark_as_initiated(self, reason=None):
 
@@ -877,6 +874,10 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
             return (timezone.now() - self.started)
         else:
             return None
+        
+    @property
+    def request_public_id(self):
+        return IdObfuscator.to_public_id(self.request_id, override_cls=ValidationRequest) if self.request_id else None
 
     def mark_as_initiated(self):
 
@@ -1101,7 +1102,8 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
                 raise ValueError(f"Outcome code '{self.name}' not recognized")
 
 id_prefix_mapping = {
-    ModelInstance: 'm',
+    Model: 'm',
+    ModelInstance: 'i',
     ValidationRequest: 'r',
     ValidationTask: 't',
     ValidationOutcome: 'o',
