@@ -1066,8 +1066,14 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
         ]
 
     def __str__(self):
-
-        return f'# Expected value: {self.expected}. Observed value: {self.observed}.'
+        members = {
+            'Feature': (self.feature or '').split('-')[0].strip(),
+            'Outcome': self.outcome_code,
+            'Severity': repr(self.severity).split('.')[-1],
+            'Expected': self.expected,
+            'Observed': self.observed
+        }
+        return f' '.join(f'{k}={v}' for k, v in members.items() if v)
     
     @property
     def instance_public_id(self):
