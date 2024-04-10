@@ -1,12 +1,17 @@
+import os
 import threading
 
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
+from django.contrib.auth.models import User
 
 local = threading.local()
 
+PRIMEMODULO = 1000000000
+COPRIMESECRET = int(os.environ.get('COPRIMESECRET', '383446691'))
+INVERSE_COPRIME = pow(COPRIMESECRET, -1, mod=PRIMEMODULO)
 
 def set_user_context(user):
     """
@@ -87,6 +92,19 @@ class TimestampedBaseModel(models.Model):
             self.updated = timezone.now()
 
         super().save(*args, **kwargs)
+
+class IdObfuscator:
+    @property
+    def public_id(self):
+        return self.to_public_id(self.id) # type(self).__name__[0].lower() + str(self.id * COPRIMESECRET % PRIMEMODULO)
+    
+    @classmethod
+    def to_public_id(cls, priv_id, override_cls=None):
+        return id_prefix_mapping[override_cls or cls] + str(priv_id * COPRIMESECRET % PRIMEMODULO)
+    
+    @staticmethod
+    def to_private_id(pub_id):
+        return int(pub_id[1:]) * INVERSE_COPRIME % PRIMEMODULO
 
 
 class AuditBaseQuerySet(TimestampedBaseQuerySet):
@@ -268,7 +286,7 @@ class AuthoringTool(TimestampedBaseModel):
             return found
 
 
-class Model(TimestampedBaseModel):
+class Model(TimestampedBaseModel, IdObfuscator):
     """
     A model to store and track Models.
     """
@@ -338,13 +356,6 @@ class Model(TimestampedBaseModel):
     size = models.PositiveIntegerField(
         null=False,
         help_text="Size of the model (bytes)"
-    )
-    
-    # TODO - not sure what this field is used for
-    hours = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="TBC (???)"        
     )
 
     license = models.CharField(
@@ -516,7 +527,7 @@ class Model(TimestampedBaseModel):
         self.status_prereq = Model.Status.NOT_VALIDATED
         self.save()
 
-class ModelInstance(TimestampedBaseModel):
+class ModelInstance(TimestampedBaseModel, IdObfuscator):
     """
     A model to store and track Model Instances.
     """
@@ -567,7 +578,7 @@ class ModelInstance(TimestampedBaseModel):
         return f'#{self.id} - {self.ifc_type} - {self.model.file_name}'
 
 
-class ValidationRequest(AuditedBaseModel):
+class ValidationRequest(AuditedBaseModel, IdObfuscator):
     """
     A model to store and track Validation Requests.
     """
@@ -682,6 +693,10 @@ class ValidationRequest(AuditedBaseModel):
             return (timezone.now() - self.started)
         else:
             return None
+        
+    @property
+    def model_public_id(self):
+        return IdObfuscator.to_public_id(self.model_id, override_cls=Model) if self.model_id else None
 
     def mark_as_initiated(self, reason=None):
 
@@ -725,7 +740,7 @@ class ValidationRequest(AuditedBaseModel):
         self.save()
 
 
-class ValidationTask(TimestampedBaseModel):
+class ValidationTask(TimestampedBaseModel, IdObfuscator):
     """
     A model to store and track Validation Tasks.
     """
@@ -743,6 +758,7 @@ class ValidationTask(TimestampedBaseModel):
         NORMATIVE_IA        = 'NORMATIVE_IA', 'Implementer Agreements (IA)'
         NORMATIVE_IP        = 'NORMATIVE_IP', 'Informal Propositions (IP)'
         INDUSTRY_PRACTICES  = 'INDUSTRY', 'Industry Practices'
+        INSTANCE_COMPLETION = 'INST_COMPLETION', 'Instance Completion'
 
     class Status(models.TextChoices):
         """
@@ -858,6 +874,10 @@ class ValidationTask(TimestampedBaseModel):
             return (timezone.now() - self.started)
         else:
             return None
+        
+    @property
+    def request_public_id(self):
+        return IdObfuscator.to_public_id(self.request_id, override_cls=ValidationRequest) if self.request_id else None
 
     def mark_as_initiated(self):
 
@@ -919,7 +939,7 @@ class ValidationTask(TimestampedBaseModel):
 
         return agg_status
 
-class ValidationOutcome(TimestampedBaseModel):
+class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
     """
     A model to store and track Validation Outcome instances.
     """
@@ -1054,6 +1074,14 @@ class ValidationOutcome(TimestampedBaseModel):
             'Observed': self.observed
         }
         return f' '.join(f'{k}={v}' for k, v in members.items() if v)
+    
+    @property
+    def instance_public_id(self):
+        return IdObfuscator.to_public_id(self.instance_id, override_cls=ModelInstance) if self.instance_id else None
+
+    @property
+    def validation_task_public_id(self):
+        return IdObfuscator.to_public_id(self.validation_task_id, override_cls=ValidationTask) if self.validation_task_id else None
 
     @property
     def inst(self):
@@ -1078,3 +1106,12 @@ class ValidationOutcome(TimestampedBaseModel):
                 return self.OutcomeSeverity.ERROR
             case _:
                 raise ValueError(f"Outcome code '{self.name}' not recognized")
+
+id_prefix_mapping = {
+    Model: 'm',
+    ModelInstance: 'i',
+    ValidationRequest: 'r',
+    ValidationTask: 't',
+    ValidationOutcome: 'o',
+    User: 'u',
+}
