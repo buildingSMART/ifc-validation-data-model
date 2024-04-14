@@ -23,7 +23,6 @@ Next, run these commands to configure Django for initial run.
 ```shell
 python3 manage.py makemigrations
 python3 manage.py migrate
-python3 manage.py createsuperuser --username root
 python3 manage.py createsuperuser --username SYSTEM
 ```
 
