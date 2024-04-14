@@ -36,6 +36,41 @@ def get_user_context():
         raise ImproperlyConfigured(msg)
 
 
+class SoftDeletableModel(models.Model):
+    """An abstract base class that provides soft-deletable Models."""
+    
+    deleted = models.BooleanField(
+        null=False,
+        default=False,
+        db_index=True,
+        help_text='Flag to indicate object is deleted'
+    )
+
+    def delete(self):        
+        """Softly delete the object."""
+
+        self.deleted = True
+        self.save()
+
+    def soft_delete(self):
+
+        return self.delete()
+
+    def undo_delete(self):
+        """Restore previouly deleted object."""
+
+        self.deleted = False
+        self.save()
+            
+    def hard_delete(self):
+        """Remove the object from the database."""
+
+        super().delete()
+
+    class Meta:
+        abstract=True
+
+
 class TimestampedBaseQuerySet(models.query.QuerySet):
     """
     An abstract QuerySet that provides self-updating created & modified fields.
@@ -74,9 +109,6 @@ class TimestampedBaseModel(models.Model):
 
     objects = TimestampedBaseQuerySet.as_manager()
 
-    # TODO - add soft delete flag and method + manager?
-    # see https://sunscrapers.com/blog/building-better-django-models-6-expert-tips
-
     class Meta:
         abstract = True
 
@@ -92,6 +124,7 @@ class TimestampedBaseModel(models.Model):
             self.updated = timezone.now()
 
         super().save(*args, **kwargs)
+
 
 class IdObfuscator:
     @property
@@ -150,9 +183,6 @@ class AuditedBaseModel(TimestampedBaseModel):
     )
 
     objects = AuditBaseQuerySet.as_manager()
-
-    # TODO - add soft delete flag and method + manager?
-    # see https://sunscrapers.com/blog/building-better-django-models-6-expert-tips
 
     class Meta:
         abstract = True
@@ -527,6 +557,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         self.status_prereq = Model.Status.NOT_VALIDATED
         self.save()
 
+
 class ModelInstance(TimestampedBaseModel, IdObfuscator):
     """
     A model to store and track Model Instances.
@@ -578,7 +609,7 @@ class ModelInstance(TimestampedBaseModel, IdObfuscator):
         return f'#{self.id} - {self.ifc_type} - {self.model.file_name}'
 
 
-class ValidationRequest(AuditedBaseModel, IdObfuscator):
+class ValidationRequest(AuditedBaseModel, SoftDeletableModel, IdObfuscator):
     """
     A model to store and track Validation Requests.
     """
@@ -939,6 +970,7 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
 
         return agg_status
 
+
 class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
     """
     A model to store and track Validation Outcome instances.
@@ -1106,6 +1138,7 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
                 return self.OutcomeSeverity.ERROR
             case _:
                 raise ValueError(f"Outcome code '{self.name}' not recognized")
+
 
 id_prefix_mapping = {
     Model: 'm',
