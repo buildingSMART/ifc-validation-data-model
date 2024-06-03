@@ -1102,6 +1102,7 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
             'Feature': (self.feature or '').split('-')[0].strip(),
             'Outcome': self.outcome_code,
             'Severity': repr(self.severity).split('.')[-1],
+            'ifc_instance_id': self.instance_id,
             'Expected': self.expected,
             'Observed': self.observed
         }
