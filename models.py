@@ -1107,6 +1107,19 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
             'Observed': self.observed
         }
         return f' '.join(f'{k}={v}' for k, v in members.items() if v)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "instance_id": self.instance_public_id,
+            "validation_task_id": self.validation_task_public_id,
+            "feature": self.feature,
+            "feature_version": self.feature_version,
+            "severity": self.get_severity_display(),  # Convert the integer to a human-readable string
+            "outcome_code": self.outcome_code,
+            "expected": self.expected,
+            "observed": self.observed,
+        }
     
     @property
     def instance_public_id(self):
