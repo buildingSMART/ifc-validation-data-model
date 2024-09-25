@@ -1111,7 +1111,7 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
     def to_dict(self):
         return {
             "id": self.id,
-            "instance_id": self.instance_public_id,
+            "instance_id": self.instance_id,
             "validation_task_id": self.validation_task_public_id,
             "feature": self.feature,
             "feature_version": self.feature_version,
