@@ -970,6 +970,212 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
 
         return agg_status
 
+class FunctionalPart(models.Model):
+    """
+    A model to represent and manage Functional Part instances.
+
+    This class can be used in two main ways:
+
+    1) **As a Static Class**:
+            Retrieve the complete hierarchy of a functional part without needing to instantiate the `FunctionalPart` class.
+            ```
+            hierarchy = FunctionalPart.get_hierarchy('GEM')
+            # {
+            #   'code': 'GEM', 
+            #   'name': 'Geometry representation', 
+            #   'sub_parts': [{'code': 'TAS', ...}, {'code': 'SWE', ...}, ...]
+            # }
+            ```
+            This provides an overview of the entire hierarchy of the functional part with the code `'GEM'`, including all its subparts with their respective codes and descriptions.
+
+            Retrieve only the codes of the sub-parts of a functional part.
+            ```
+            sub_part_codes = [i['code'] for i in FunctionalPart.get_hierarchy('GEM')['sub_parts']]
+            # ['TAS', 'SWE', 'MPD', 'BRP', 'TFM', 'BBX', 'RCO', 'CPD', 'ALS']
+            ```
+
+        - **Get Parent of a Sub-part**:
+            Retrieve the parent of a specific functional part by its code.
+            ```
+            parent = FunctionalPart.get_parent('ALS')
+            # {'code': 'GEM', 'name': 'Geometry representation'}
+            ```
+
+    2) **Within the Context of `ValidationOutcome`**:
+        -
+            When creating a ValidationOutcome instance, functional parts can be associated with it via the `functional_part_codes` attribute.
+            ``'
+            validation_outcome = ValidationOutcome(
+                # Other attributes...
+                functional_part_codes=FunctionalPart.filter_functional_part_tags(context.tags)
+            )
+            ```
+            The `filter_functional_part_tags` method filters and retrieves relevant functional parts from the tags present in the Behave context (e.g., `context.feature.tags`).
+
+        - **Accessing Functional Parts**:
+            Once a `ValidationOutcome` instance is created, you can access the associated functional parts along with their relevant information.
+            ```
+            validation_outcome.functional_parts
+            # [<FunctionalPart: ALS - Alignment geometry>, <FunctionalPart: GEM - Geometry representation>]
+            ```
+
+        - **Navigating Functional Part Hierarchies**:
+            From each `FunctionalPart` in `validation_outcome.functional_parts`,:
+            - Get the parent of the functional part:
+            ```
+            validation_outcome.functional_parts[0].parent
+            # <FunctionalPart: GEM - Geometry representation>
+            ```
+            - Retrieve all sub-parts:
+            ```
+            validation_outcome.functional_parts[1].sub_parts
+            # [<FunctionalPart: TAS - Tessellated (i.e., meshes)>, <FunctionalPart: SWE - Sweeps (i.e., extrusions, lofts, blends)>, ...]
+            ```
+    """
+    class FunctionalPartCode(models.TextChoices):
+        """
+        A code representing a Functional Part
+        """
+        PJS = "PJS", "Project definition"
+        GRF = "GRF", "Georeferencing"
+        BLT = "BLT", "Built elements"
+        ASM = "ASM", "Assemblies"
+        SPA = "SPA", "Spaces"
+        VRT = "VRT", "Virtual elements"
+        OJT = "OJT", "Objects typing"
+        STR = "STR", "Structural items and actions"
+        CTR = "CTR", "Constraints"
+        GRP = "GRP", "Groups"
+        SPS = "SPS", "Spatial breakdown"
+        MAT = "MAT", "Materials"
+        PSE = "PSE", "Properties for object"
+        QTY = "QTY", "Quantities for objects"
+        CLS = "CLS", "Classification reference"
+        ANN = "ANN", "Annotations"
+        LIB = "LIB", "Library reference"
+        DOC = "DOC", "Documentation reference"
+        LAY = "LAY", "Presentation layer"
+        CTX = "CTX", "Presentation Colours and Textures"
+        POR = "POR", "Ports connectivity & nesting"
+        OJP = "OJP", "Object placement"
+        POS = "POS", "Positioning elements"
+        GEM = "GEM", "Geometry representation"
+        VER = "VER", "Versioning / revision control"
+        CST = "CST", "Costing"
+        SDL = "SDL", "Scheduling of activities"
+        LOP = "LOP", "Local placement"
+        GRD = "GRD", "Grid"
+        AXG = "AXG", "Axis geometry"
+        TAS = "TAS", "Tessellated (i.e. meshes)"
+        SWE = "SWE", "Sweeps (i.e., extrusions, lofts, blends)"
+        MPD = "MPD", "Mapped geometry"
+        LIP = "LIP", "Linear placement"
+        ALB = "ALB", "Alignment"
+        ALS = "ALS", "Alignment geometry"
+        BRP = "BRP", "Boundary Representation (BREP)"
+        TFM = "TFM", "Transformations"
+        RCO = "RCO", "Relational constructs"
+        GDP = "GDP", "Grid placement"
+        RFT = "RFT", "Referent"
+        PBG = "PBG", "Point-based geometry"
+        CSG = "CSG", "Constructive Solid Geometry (CSG)"
+        BBX = "BBX", "Bounding box"
+        CPD = "CPD", "Clipped representations"
+
+    hierarchy = {
+            'POS': ['LOP', 'LIP', 'GDP', 'GRD', 'ALB', 'RFT'],
+            'GEM': ['TAS', 'SWE', 'MPD', 'BRP', 'TFM', 'BBX', 'RCO', 'CPD', 'ALS'],
+            'OJP': ['LOP', 'LIP', 'GDP']
+        }
+
+    id = models.AutoField(
+        primary_key=True,
+        help_text="Unique identifier for the Functional Part (auto-generated)."
+    )
+    code = models.CharField(
+        max_length=3,
+        choices=FunctionalPartCode.choices,
+        unique=True,
+        help_text="Code representing the Functional Part (e.g., 'POS', 'GEM')"
+    )
+    name = models.CharField(
+        max_length=255,
+        help_text="Name of the Functional Part (e.g., 'Positioning', 'Geometry')"
+    )
+
+    def __init__(self, functional_part_code):
+        super().__init__(self)
+        if isinstance(functional_part_code, FunctionalPart.FunctionalPartCode):
+            self.code = functional_part_code.value
+            self.name = functional_part_code.label
+
+    @classmethod
+    def get_hierarchy(cls, code):
+        """
+        Retrieves the entire hierarchy starting from the given functional part code.
+        e.g. 'FunctionalPart.get_hierarchy('POS') returns a dictionary of (if existing) sub_parts with code and names
+        """
+        def build_hierarchy(part_code):
+            sub_parts = cls.hierarchy.get(part_code, [])
+            name = dict(cls.FunctionalPartCode.choices).get(part_code, "Unknown Part")
+            return {
+                "code": part_code,
+                "name": name,
+                "sub_parts": [build_hierarchy(child_code) for child_code in sub_parts]
+            }
+
+        return build_hierarchy(code)
+
+    @classmethod
+    def get_parent(cls, code):
+        """
+        Retrieves the parent of the given functional part code.
+        """
+        for parent_code, sub_parts in cls.hierarchy.items():
+            if code in sub_parts:
+                return {
+                    "code": parent_code,
+                    "name": dict(cls.FunctionalPartCode.choices).get(parent_code, "Unknown Part")
+                }
+        return None
+
+    @classmethod
+    def get_sub_parts(cls, part_code):
+        sub_part_codes = cls.hierarchy.get(part_code, [])
+        return [FunctionalPart(FunctionalPart.FunctionalPartCode(code)) for code in sub_part_codes]
+
+    @property
+    def sub_parts(self):
+        """
+        Returns the sub-parts of the current FunctionalPart.
+        """
+        return self.get_sub_parts(self.code)
+
+    @property
+    def parent(self):
+        """
+        Returns the parent FunctionalPart for the current FP.
+        """
+        parent_info = self.get_parent(self.code)
+        if parent_info:
+            return FunctionalPart(FunctionalPart.FunctionalPartCode(parent_info['code']))
+        return None
+    
+    @classmethod
+    def filter_functional_part_tags(cls, tags):
+        """
+        Filters the list of tags (e.g. in the behave context) and returns only those that match FunctionalPartCode choices.
+        outcome = ValidationOutcome(
+            functional_part_codes = FunctionalPart.filter_functional_part_tags(context.tags)
+            )
+        """
+        valid_codes = set(cls.FunctionalPartCode.values)  # Set of valid Functional Part codes
+        return [tag for tag in tags if tag in valid_codes]
+
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
 
 class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
     """
@@ -1087,6 +1293,18 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
         blank=True,
         help_text="Observed value(s) for the Validation Outcome."
     )
+    
+    functional_part_codes = models.JSONField(
+        help_text = "List of functional part codes (e.g. GEM, SPS)",
+        null=False,
+        blank=False,
+    )
+
+    @property
+    def functional_parts(self):
+        return [
+            FunctionalPart(FunctionalPart.FunctionalPartCode(code)) for code in self.functional_part_codes
+        ]
 
     class Meta:
         db_table = "ifc_validation_outcome"
@@ -1161,4 +1379,5 @@ id_prefix_mapping = {
     ValidationTask: 't',
     ValidationOutcome: 'o',
     User: 'u',
+    FunctionalPart: 'f'
 }
