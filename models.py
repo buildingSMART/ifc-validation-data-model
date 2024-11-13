@@ -604,6 +604,10 @@ class ModelInstance(TimestampedBaseModel, IdObfuscator):
         verbose_name = "Model Instance"
         verbose_name_plural = "Model Instances"
 
+        constraints = [
+            models.UniqueConstraint(fields=['model_id', 'stepfile_id', 'ifc_type'], name='modelid_stepfileid_ifctype')
+        ]
+
     def __str__(self):
 
         return f'#{self.id} - {self.ifc_type} - {self.model.file_name}'
