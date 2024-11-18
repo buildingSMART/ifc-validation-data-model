@@ -247,7 +247,7 @@ class UserAdditionalInfo(AuditedBaseModel):
         help_text='Whether this user belongs to an Authoring Tool vendor (optional)'
     ) 
 
-    company = models.OneToOneField(
+    company = models.ForeignKey(
         Company, 
         null=True,
         blank=True,
