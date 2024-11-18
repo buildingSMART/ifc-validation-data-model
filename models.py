@@ -230,6 +230,38 @@ class Company(TimestampedBaseModel):
         return f'{self.name}'
 
 
+class UserAdditionalInfo(AuditedBaseModel):
+    """
+    A model to store and track additional User fields.
+    """
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        help_text='What User this additional info belongs to'
+    )
+
+    is_vendor = models.BooleanField(
+        null=True,
+        blank=True,
+        help_text='Whether this user belongs to an Authoring Tool vendor (optional)'
+    ) 
+
+    company = models.OneToOneField(
+        Company, 
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        help_text='What Company the User belongs to (optional)'
+    )
+
+    class Meta:
+
+        db_table = "ifc_user_aditional_info"
+        verbose_name = "User Additional Info"
+        verbose_name_plural = "User Additional Info"
+
+
 class AuthoringTool(TimestampedBaseModel):
     """
     A model to store and track Authoring Tool information.
@@ -1156,6 +1188,50 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
                 return self.OutcomeSeverity.ERROR
             case _:
                 raise ValueError(f"Outcome code '{self.name}' not recognized")
+
+
+class Version(TimestampedBaseModel):
+
+    """
+    A model to store and track Validation Service software versions.
+    """
+
+    id = models.AutoField(
+        primary_key=True,
+        help_text="Identifier of the Version (auto-generated)."
+    )
+
+    name = models.CharField(
+        max_length=50,
+        null=False,
+        blank=False,
+        unique=True,
+        db_index=True,
+        help_text="Name of the Version, eg. 0.6.8"
+    )
+
+    released = models.DateTimeField(
+        null=False,
+        blank=False,
+        help_text="Timestamp the Version was released."
+    )
+
+    release_notes = models.TextField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text="Description or URL of the Release Notes (optional)."
+    )
+
+    class Meta:
+
+        db_table = "ifc_version"
+        verbose_name = "Version"
+        verbose_name_plural = "Versions"
+
+    def __str__(self):
+
+        return f'{self.name}'
 
 
 id_prefix_mapping = {
