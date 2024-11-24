@@ -21,7 +21,7 @@ class Migration(migrations.Migration):
                 ('id', models.AutoField(help_text='Identifier of the Version (auto-generated).', primary_key=True, serialize=False)),
                 ('name', models.CharField(db_index=True, help_text='Name of the Version, eg. 0.6.8', max_length=50, unique=True)),
                 ('released', models.DateTimeField(help_text='Timestamp the Version was released.')),
-                ('release_notes', models.TextField(blank=True, help_text='Description or URL of the Release Notes.', max_length=255, null=True)),
+                ('release_notes', models.TextField(blank=True, help_text='Description or URL of the Release Notes (optional).', max_length=255, null=True)),
             ],
             options={
                 'verbose_name': 'Version',
