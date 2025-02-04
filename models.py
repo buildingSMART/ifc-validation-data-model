@@ -838,7 +838,7 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         MVD                 = 'MVD', 'Model View Definitions'
         BSDD                = 'BSDD', 'bSDD Compliance'
         PARSE_INFO          = 'INFO', 'Parse Info'
-        PREREQUISITES       = 'PREREQ', 'Prerequisites', 
+        PREREQUISITES       = 'PREREQ', 'Prerequisites'
         HEADER              = 'HEADER', 'Header Validation'
         NORMATIVE_IA        = 'NORMATIVE_IA', 'Implementer Agreements (IA)'
         NORMATIVE_IP        = 'NORMATIVE_IP', 'Informal Propositions (IP)'
