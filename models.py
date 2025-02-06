@@ -551,6 +551,16 @@ class Model(TimestampedBaseModel, IdObfuscator):
         blank=False,
         help_text="Status of the Prerequisites Validation."
     )
+    
+    status_header = models.CharField(
+        max_length=1,
+        choices=Status.choices,
+        default=Status.NOT_VALIDATED,
+        db_index=True,
+        null=False,
+        blank=False,
+        help_text="Status of the Header Validation."
+    )
 
     uploaded_by = models.ForeignKey(
         to=settings.AUTH_USER_MODEL,
@@ -565,6 +575,12 @@ class Model(TimestampedBaseModel, IdObfuscator):
         null=True,
         blank=True,
         help_text="Properties of the Model."
+    )
+    
+    header_validation = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Validation of the Header of the Model."
     )
 
     class Meta:
@@ -587,6 +603,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         self.status_syntax = Model.Status.NOT_VALIDATED
         self.status_industry_practices = Model.Status.NOT_VALIDATED
         self.status_prereq = Model.Status.NOT_VALIDATED
+        self.status_header = Model.Status.NOT_VALIDATED
         self.save()
 
 
@@ -822,6 +839,7 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         BSDD                = 'BSDD', 'bSDD Compliance'
         PARSE_INFO          = 'INFO', 'Parse Info'
         PREREQUISITES       = 'PREREQ', 'Prerequisites'
+        HEADER              = 'HEADER', 'Header Validation'
         NORMATIVE_IA        = 'NORMATIVE_IA', 'Implementer Agreements (IA)'
         NORMATIVE_IP        = 'NORMATIVE_IP', 'Informal Propositions (IP)'
         INDUSTRY_PRACTICES  = 'INDUSTRY', 'Industry Practices'
