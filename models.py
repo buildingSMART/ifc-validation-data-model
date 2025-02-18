@@ -257,7 +257,7 @@ class UserAdditionalInfo(AuditedBaseModel):
 
     class Meta:
 
-        db_table = "ifc_user_aditional_info"
+        db_table = "ifc_user_additional_info"
         verbose_name = "User Additional Info"
         verbose_name_plural = "User Additional Info"
 
