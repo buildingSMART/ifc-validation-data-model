@@ -227,6 +227,14 @@ class Company(TimestampedBaseModel):
         help_text="Legal name of the Company (optional)."
     )
 
+    email_address_pattern = models.CharField(
+        max_length=1024,
+        null=True,
+        blank=True,
+        unique=True,
+        help_text="Email address pattern(s) of the Company (optional)."
+    )
+
     class Meta:
 
         db_table = "ifc_company"
