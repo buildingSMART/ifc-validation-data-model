@@ -333,7 +333,7 @@ class AuthoringTool(TimestampedBaseModel):
         An Authoring Tool has at least a name; company and version are optional.
         """
 
-        full_name_without_version = f'{company.name} - {self.name}'.strip() if self.company else f'{self.name}'.strip()
+        full_name_without_version = f'{self.company.name} - {self.name}'.strip() if self.company else f'{self.name}'.strip()
         return f'{full_name_without_version} - {self.version}'.strip() if self.version else full_name_without_version
 
     def find_by_full_name(full_name):
