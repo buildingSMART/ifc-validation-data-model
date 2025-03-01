@@ -334,7 +334,7 @@ class AuthoringTool(TimestampedBaseModel):
         """
 
         full_name_without_version = f'{company_name} - {self.name}'.strip() if self.company else f'{self.name}'.strip()
-        return f'{full_name_without_version} - {self.version}'.strip() self.version else full_name_without_version
+        return f'{full_name_without_version} - {self.version}'.strip() if self.version else full_name_without_version
 
     def find_by_full_name(full_name):
         """
