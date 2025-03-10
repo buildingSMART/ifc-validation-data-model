@@ -6,7 +6,6 @@ load_dotenv()
 INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.contenttypes",
-
     "apps.ifc_validation_models"
 ]
 
@@ -16,6 +15,7 @@ DATABASES_ALL = {
     DB_SQLITE: {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": "test_django_db.sqlite3",
+        "MIGRATE": False,
     }
 }
 
