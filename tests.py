@@ -1,5 +1,6 @@
 from django.test import TestCase
 from django.contrib.auth.models import User
+from django.db.utils import IntegrityError
 
 from apps.ifc_validation_models.models import ValidationRequest, ValidationTask  # TODO: for now needs to be absolute!
 from apps.ifc_validation_models.models import Company, AuthoringTool, Model
@@ -130,7 +131,7 @@ class ValidationModelsTestCase(TestCase):
         self.assertEqual(all_tools.count(), 1)
         self.assertEqual(all_tools[0].id, tool.id)
         self.assertEqual(tool.company.name, company.name)
-        self.assertEqual(all_tools.first().company.name, company.name)
+        self.assertEqual(all_tools[0].company.name, company.name)
         self.assertEqual(model.produced_by.company.name, company.name)
         self.assertEqual(model.uploaded_by.username, user.username)
         self.assertEqual(user.models.count(), 2)
@@ -138,6 +139,7 @@ class ValidationModelsTestCase(TestCase):
 
     def test_find_tool_by_full_name_should_succeed(self):
 
+        # arrange
         ValidationModelsTestCase.set_user_context()
         company1 = Company.objects.create(name='Acme Inc.')
         tool1 = AuthoringTool.objects.create(name='Tool ABC', version='1.0', company=company1)
@@ -147,17 +149,20 @@ class ValidationModelsTestCase(TestCase):
         tool3 = AuthoringTool.objects.create(name='App', version=None, company=company2)
         tool4 = AuthoringTool.objects.create(name='App', version='2024', company=company2)
 
+        # act/assert
         name_to_find = 'Acme Inc. - Tool ABC - 1.0'
         found_tool = AuthoringTool.find_by_full_name(name_to_find)
         self.assertIsNotNone(found_tool)
         self.assertIsInstance(found_tool, AuthoringTool)
         self.assertEqual(found_tool.name, tool1.name)
+        self.assertEqual(found_tool.company.name, tool1.company.name)
 
         name_to_find = 'Acme Inc. - Tool ABC 1.0'
         found_tool = AuthoringTool.find_by_full_name(name_to_find)
         self.assertIsNotNone(found_tool)
         self.assertIsInstance(found_tool, AuthoringTool)
         self.assertEqual(found_tool.name, tool1.name)
+        self.assertEqual(found_tool.company.name, tool1.company.name)
 
         name_to_find = 'PyCAD Limited'
         found_tool = AuthoringTool.find_by_full_name(name_to_find)
@@ -168,12 +173,14 @@ class ValidationModelsTestCase(TestCase):
         self.assertIsNotNone(found_tool)
         self.assertIsInstance(found_tool, AuthoringTool)
         self.assertEqual(found_tool.name, tool3.name)
+        self.assertEqual(found_tool.company.name, tool3.company.name)
 
         name_to_find = 'PyCAD Limited - App 2024'
         found_tool = AuthoringTool.find_by_full_name(name_to_find)
         self.assertIsNotNone(found_tool)
         self.assertIsInstance(found_tool, AuthoringTool)
         self.assertEqual(found_tool.name, tool4.name)
+        self.assertEqual(found_tool.company.name, tool4.company.name)
 
         name_to_find = 'PyCAD Limited App 2020'
         found_tool = AuthoringTool.find_by_full_name(name_to_find)
@@ -181,36 +188,65 @@ class ValidationModelsTestCase(TestCase):
 
     def test_find_tool_by_full_name_should_succeed2(self):
 
+        # arrange
         ValidationModelsTestCase.set_user_context()
         tool1 = AuthoringTool.objects.create(name='Test Application', version='0.10')        
+        tool2 = AuthoringTool.objects.create(name='Test Application', version='2023-01')        
 
-        name_to_find = 'Test Application 0.10'
-
+        # act/assert
+        name_to_find = 'Test Application - 0.10'
         found_tool = AuthoringTool.find_by_full_name(name_to_find)
         self.assertIsNotNone(found_tool)
         self.assertIsInstance(found_tool, AuthoringTool)
         self.assertEqual(found_tool.name, tool1.name)
-
-        tool2 = AuthoringTool.objects.create(name='Test Application', version='2023-01')        
-
+        self.assertIsNone(found_tool.company)
+        
         name_to_find = 'Test Application - 2023-01'
-
         found_tool = AuthoringTool.find_by_full_name(name_to_find)
         self.assertIsNotNone(found_tool)
         self.assertIsInstance(found_tool, AuthoringTool)
         self.assertEqual(found_tool.name, tool2.name)
+        self.assertIsNone(found_tool.company)
 
     def test_find_tool_by_full_name_should_succeed3(self):
 
+        # arrange
         ValidationModelsTestCase.set_user_context()
         tool1 = AuthoringTool.objects.create(name='IfcOpenShell-v0.7.0-6c9e130ca', version='v0.7.0-6c9e130ca')        
 
+        # act
         name_to_find = 'IfcOpenShell-v0.7.0-6c9e130ca v0.7.0-6c9e130ca'
-
         found_tool = AuthoringTool.find_by_full_name(name_to_find)
+
+        # assert
         self.assertIsNotNone(found_tool)
         self.assertIsInstance(found_tool, AuthoringTool)
         self.assertEqual(found_tool.name, tool1.name)
+        self.assertIsNone(found_tool.company)
+
+    def test_find_tool_by_full_name_should_return_none(self):
+
+        # arrange
+        ValidationModelsTestCase.set_user_context()
+        AuthoringTool.objects.create(name='Test Application', version='0.10')        
+
+        # act
+        name_to_find = 'Test Application 0.12'
+        found_tool = AuthoringTool.find_by_full_name(name_to_find)
+
+        # assert
+        self.assertIsNone(found_tool)
+
+    def test_add_tool_twice_should_fail(self):
+
+        # arrange
+        ValidationModelsTestCase.set_user_context()        
+
+        # act/assert
+        AuthoringTool.objects.create(name='Test Application', version='0.10') # should succeed
+        AuthoringTool.objects.create(name='Test Application', version='0.11') # should succeed
+        with self.assertRaises(IntegrityError):
+            AuthoringTool.objects.create(name='Test Application', version='0.11') # should fail
 
     def test_model_can_navigate_back_to_request(self):
         
