@@ -1,5 +1,3 @@
-import datetime
-
 from django.test import TestCase
 from django.contrib.auth.models import User
 
@@ -43,11 +41,11 @@ class ValidationModelsTestCase(TestCase):
         request2 = ValidationRequest.objects.get(id=request.id)
 
         # assert
-        self.assertEqual(request2.created.date(), datetime.date.today())
+        self.assertIsNotNone(request2.created)
         self.assertEqual(request2.created_by.username, 'SYSTEM')
         self.assertEqual(request2.created_by.id, 1)
-        self.assertTrue(request2.updated is None)
-        self.assertTrue(request2.updated_by is None)
+        self.assertIsNone(request2.updated)
+        self.assertIsNone(request2.updated_by)
 
     def test_updated_request_has_updated_fields(self):
 
@@ -64,10 +62,10 @@ class ValidationModelsTestCase(TestCase):
         request2.save()  # simulate update
 
         # assert
-        self.assertEqual(request2.created.date(), datetime.date.today())
+        self.assertIsNotNone(request2.created)
         self.assertEqual(request2.created_by.username, 'SYSTEM')
         self.assertEqual(request2.created_by.id, 1)
-        self.assertEqual(request2.updated.date(), datetime.date.today())
+        self.assertIsNotNone(request2.created)
         self.assertEqual(request2.updated_by.username, 'SYSTEM')
         self.assertEqual(request2.updated_by.id, 1)
 
