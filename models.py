@@ -2,6 +2,7 @@ import os
 import threading
 
 from django.db import models
+from django.db.models import Q
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
@@ -319,7 +320,17 @@ class AuthoringTool(TimestampedBaseModel):
         verbose_name_plural = "Authoring Tools"
 
         constraints = [
-            models.UniqueConstraint(fields=['name', 'version'], name='unique_name_version')
+            # Postgres supports NULLS DISTINCT, but not all DB's do (Sqlite does not!) - hence workaround using two constraints
+            # models.UniqueConstraint(fields=['name', 'version', 'company_id'], name='unique_name_version_company', nulls_distinct=False)
+            models.UniqueConstraint(
+                name='unique_name_version_company_id',
+                fields=['name', 'version', 'company_id']
+            ),
+            models.UniqueConstraint(
+                name='unique_name_version_company_id_null',
+                fields=['name', 'version'],
+                condition=Q(company_id__isnull=True)
+            )
         ]
 
     def __str__(self):
