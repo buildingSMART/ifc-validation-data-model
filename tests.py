@@ -224,6 +224,22 @@ class ValidationModelsTestCase(TestCase):
         self.assertEqual(found_tool.name, tool1.name)
         self.assertIsNone(found_tool.company)
 
+    def test_find_tool_by_full_name_should_succeed4(self):
+
+        # arrange
+        ValidationModelsTestCase.set_user_context()
+        tool1 = AuthoringTool.objects.create(name='MyFabTool', version='1.0')
+
+        # act
+        name_to_find = 'MyFabTool - 1.0'
+        found_tool = AuthoringTool.find_by_full_name(name_to_find)
+
+        # assert
+        self.assertIsNotNone(found_tool)
+        self.assertIsInstance(found_tool, AuthoringTool)
+        self.assertEqual(found_tool.name, tool1.name)
+        self.assertIsNone(found_tool.company)
+
     def test_find_tool_by_full_name_should_return_none(self):
 
         # arrange
@@ -247,6 +263,18 @@ class ValidationModelsTestCase(TestCase):
         AuthoringTool.objects.create(name='Test Application', version='0.11') # should succeed
         with self.assertRaises(IntegrityError):
             AuthoringTool.objects.create(name='Test Application', version='0.11') # should fail
+
+    def test_add_tool_with_company_twice_should_fail(self):
+
+        # arrange
+        ValidationModelsTestCase.set_user_context()        
+
+        # act/assert
+        company, _ = Company.objects.get_or_create(name='Acme Inc.')
+        AuthoringTool.objects.create(name='Test Application', version='0.10', company=company) # should succeed
+        AuthoringTool.objects.create(name='Test Application', version='0.11', company=company) # should succeed
+        with self.assertRaises(IntegrityError):
+            AuthoringTool.objects.create(name='Test Application', version='0.11', company=company) # should fail
 
     def test_model_can_navigate_back_to_request(self):
         
@@ -305,4 +333,3 @@ class ValidationModelsTestCase(TestCase):
         # assert
         self.assertIsNotNone(retrieved_task)
         self.assertEqual(model.id, model_id)
-
