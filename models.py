@@ -262,7 +262,14 @@ class UserAdditionalInfo(AuditedBaseModel):
         null=True,
         blank=True,
         help_text='Whether this user belongs to an Authoring Tool vendor (optional)'
-    ) 
+    )
+
+    is_vendor_self_declared = models.BooleanField(
+        null=True,
+        blank=True,
+        verbose_name=("is vendor (self declared)"),
+        help_text='Whether this user has self-declared an affiliation with an Authoring Tool vendor (optional)'
+    )
 
     company = models.ForeignKey(
         Company, 
