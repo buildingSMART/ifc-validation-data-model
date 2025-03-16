@@ -4,6 +4,7 @@ from django.db.utils import IntegrityError
 
 from apps.ifc_validation_models.models import ValidationRequest, ValidationTask  # TODO: for now needs to be absolute!
 from apps.ifc_validation_models.models import Company, AuthoringTool, Model
+from apps.ifc_validation_models.models import UserAdditionalInfo
 from apps.ifc_validation_models.models import set_user_context
 
 class ValidationModelsTestCase(TestCase):
@@ -267,7 +268,7 @@ class ValidationModelsTestCase(TestCase):
     def test_add_tool_with_company_twice_should_fail(self):
 
         # arrange
-        ValidationModelsTestCase.set_user_context()        
+        ValidationModelsTestCase.set_user_context()
 
         # act/assert
         company, _ = Company.objects.get_or_create(name='Acme Inc.')
@@ -333,3 +334,101 @@ class ValidationModelsTestCase(TestCase):
         # assert
         self.assertIsNotNone(retrieved_task)
         self.assertEqual(model.id, model_id)
+
+    def test_find_users_by_email_pattern_should_succeed(self):
+
+        # arrange
+        ValidationModelsTestCase.set_user_context()
+        company = Company.objects.create(name='Acme Inc.', email_address_pattern='@acme.com')
+        user1 = User.objects.create(id=2, username='JohnDoe', email='jdoe@acme.com', is_active=True)
+        user2 = User.objects.create(id=3, username='JaneDoe', email='jane@looneytunes.com', is_active=True)
+
+        # act
+        users = company.find_users_by_email_pattern()
+
+        # assert
+        self.assertIsNotNone(users)
+        self.assertEqual(1, len(users))
+        self.assertEqual(user1, users[0])
+
+    def test_find_users_by_email_pattern_should_succeed2(self):
+
+        # arrange
+        ValidationModelsTestCase.set_user_context()
+        company = Company.objects.create(name='Acme Inc.', email_address_pattern='@acme.com')
+        user1 = User.objects.create(id=2, username='JohnDoe', email='jdoe@acme.com', is_active=True)
+        uai1 = UserAdditionalInfo.objects.create(user=user1, company=company)
+        user2 = User.objects.create(id=3, username='JaneDoe', email='jane@acme.com', is_active=True)
+
+        # act
+        users = company.find_users_by_email_pattern(only_new=True)
+
+        # assert
+        self.assertIsNotNone(users)
+        self.assertEqual(1, len(users))
+        self.assertEqual(user2, users[0])
+
+    def test_find_users_by_email_pattern_should_return_none(self):
+
+        # arrange
+        ValidationModelsTestCase.set_user_context()
+        company = Company.objects.create(name='Acme Inc.', email_address_pattern='@acme.com')
+        user1 = User.objects.create(id=2, username='JohnDoe', email='jdoe@protonmail.com', is_active=True)
+        user2 = User.objects.create(id=3, username='JaneDoe', email='jane@looneytunes.com', is_active=True)
+
+        # act
+        users = company.find_users_by_email_pattern()
+
+        # assert
+        self.assertIsNone(users)
+
+    def test_find_company_by_email_pattern_should_succeed(self):
+
+        # arrange
+        ValidationModelsTestCase.set_user_context()
+        company = Company.objects.create(name='Acme Inc.', email_address_pattern='@acme.com|@looneytunes.com')
+        user1 = User.objects.create(id=2, username='JohnDoe', email='jdoe@acme.com', is_active=True)
+        user2 = User.objects.create(id=3, username='JaneDoe', email='jane@looneytunes.com', is_active=True)
+
+        # act
+        company1 = UserAdditionalInfo.find_company_by_email_pattern(user1)
+        company2 = UserAdditionalInfo.find_company_by_email_pattern(user2)
+
+        # assert
+        self.assertIsNotNone(company1)
+        self.assertIsNotNone(company2)
+        self.assertEqual(company, company1)
+        self.assertEqual(company, company2)
+
+    def test_find_company_by_email_pattern_should_succeed2(self):
+
+        # arrange
+        ValidationModelsTestCase.set_user_context()
+        company = Company.objects.create(name='Acme Inc.', email_address_pattern='@acme.com')
+        user1 = User.objects.create(id=2, username='JohnDoe', email='jdoe@acme.com', is_active=True)
+        user2 = User.objects.create(id=3, username='JaneDoe', email='jane@looneytunes.com', is_active=True)
+
+        # act
+        company1 = UserAdditionalInfo.find_company_by_email_pattern(user1)
+        company2 = UserAdditionalInfo.find_company_by_email_pattern(user2)
+
+        # assert
+        self.assertIsNotNone(company1)
+        self.assertIsNone(company2)
+        self.assertEqual(company, company1)
+
+    def test_find_company_by_email_pattern_should_return_none(self):
+
+        # arrange
+        ValidationModelsTestCase.set_user_context()
+        company = Company.objects.create(name='Acme Inc.', email_address_pattern='@acme.com')
+        user1 = User.objects.create(id=2, username='JohnDoe', email='jdoe@protonmail.com', is_active=True)
+        user2 = User.objects.create(id=3, username='JaneDoe', email='jane@looneytunes.com', is_active=True)
+
+        # act
+        company1 = UserAdditionalInfo.find_company_by_email_pattern(user1)
+        company2 = UserAdditionalInfo.find_company_by_email_pattern(user2)
+
+        # assert
+        self.assertIsNone(company1)
+        self.assertIsNone(company2)

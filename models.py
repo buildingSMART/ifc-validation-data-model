@@ -245,6 +245,16 @@ class Company(TimestampedBaseModel):
     def __str__(self):
 
         return f'{self.name}'
+    
+    def find_users_by_email_pattern(self, only_new=False):
+
+        if self.email_address_pattern:
+            matching_users = User.objects.filter(email__iregex=self.email_address_pattern)
+            if only_new: 
+                matching_users = matching_users.exclude(useradditionalinfo__company=self)
+            return matching_users if matching_users.exists() else None
+        
+        return None
 
 
 class UserAdditionalInfo(AuditedBaseModel):
@@ -284,6 +294,19 @@ class UserAdditionalInfo(AuditedBaseModel):
         db_table = "ifc_user_additional_info"
         verbose_name = "User Additional Info"
         verbose_name_plural = "User Additional Info"
+
+    def find_company_by_email_pattern(self):
+        
+        if self.email:
+
+            companies = Company.objects.filter(email_address_pattern__isnull=False)
+            if companies.exists():
+                for company in companies:
+                    user = User.objects.filter(id=self.id, email__iregex=company.email_address_pattern).first()
+                    if user:
+                        return company
+
+        return None
 
 
 class AuthoringTool(TimestampedBaseModel):
