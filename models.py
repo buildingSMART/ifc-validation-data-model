@@ -2,6 +2,7 @@ import os
 import threading
 
 from django.db import models
+from django.db.models import Q
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
@@ -244,6 +245,16 @@ class Company(TimestampedBaseModel):
     def __str__(self):
 
         return f'{self.name}'
+    
+    def find_users_by_email_pattern(self, only_new=False):
+
+        if self.email_address_pattern:
+            matching_users = User.objects.filter(email__iregex=self.email_address_pattern)
+            if only_new: 
+                matching_users = matching_users.exclude(useradditionalinfo__company=self)
+            return matching_users if matching_users.exists() else None
+        
+        return None
 
 
 class UserAdditionalInfo(AuditedBaseModel):
@@ -261,7 +272,14 @@ class UserAdditionalInfo(AuditedBaseModel):
         null=True,
         blank=True,
         help_text='Whether this user belongs to an Authoring Tool vendor (optional)'
-    ) 
+    )
+
+    is_vendor_self_declared = models.BooleanField(
+        null=True,
+        blank=True,
+        verbose_name=("is vendor (self declared)"),
+        help_text='Whether this user has self-declared an affiliation with an Authoring Tool vendor (optional)'
+    )
 
     company = models.ForeignKey(
         Company, 
@@ -276,6 +294,19 @@ class UserAdditionalInfo(AuditedBaseModel):
         db_table = "ifc_user_additional_info"
         verbose_name = "User Additional Info"
         verbose_name_plural = "User Additional Info"
+
+    def find_company_by_email_pattern(self):
+        
+        if self.email:
+
+            companies = Company.objects.filter(email_address_pattern__isnull=False)
+            if companies.exists():
+                for company in companies:
+                    user = User.objects.filter(id=self.id, email__iregex=company.email_address_pattern).first()
+                    if user:
+                        return company
+
+        return None
 
 
 class AuthoringTool(TimestampedBaseModel):
@@ -319,7 +350,17 @@ class AuthoringTool(TimestampedBaseModel):
         verbose_name_plural = "Authoring Tools"
 
         constraints = [
-            models.UniqueConstraint(fields=['name', 'version'], name='unique_name_version')
+            # Postgres supports NULLS DISTINCT, but not all DB's do (Sqlite does not!) - hence workaround using two constraints
+            # models.UniqueConstraint(fields=['name', 'version', 'company_id'], name='unique_name_version_company', nulls_distinct=False)
+            models.UniqueConstraint(
+                name='unique_name_version_company_id',
+                fields=['name', 'version', 'company_id']
+            ),
+            models.UniqueConstraint(
+                name='unique_name_version_company_id_null',
+                fields=['name', 'version'],
+                condition=Q(company_id__isnull=True)
+            )
         ]
 
     def __str__(self):
