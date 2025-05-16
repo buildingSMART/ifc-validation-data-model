@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('ifc_validation_models', '0011_useradditionalinfo_is_vendor_self_declared'),
+        ('ifc_validation_models', '0012_alter_useradditionalinfo_is_vendor_self_declared'),
     ]
 
     operations = [
