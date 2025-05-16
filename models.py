@@ -614,6 +614,16 @@ class Model(TimestampedBaseModel, IdObfuscator):
         help_text="Status of the Header Validation."
     )
 
+    status_signatures = models.CharField(
+        max_length=1,
+        choices=Status.choices,
+        default=Status.NOT_VALIDATED,
+        db_index=True,
+        null=False,
+        blank=False,
+        help_text="Status of the Digital Signatures Validation."
+    )
+
     uploaded_by = models.ForeignKey(
         to=settings.AUTH_USER_MODEL,
         on_delete=models.RESTRICT,
@@ -896,6 +906,7 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         NORMATIVE_IP        = 'NORMATIVE_IP', 'Informal Propositions (IP)'
         INDUSTRY_PRACTICES  = 'INDUSTRY', 'Industry Practices'
         INSTANCE_COMPLETION = 'INST_COMPLETION', 'Instance Completion'
+        DIGITAL_SIGNATURES  = 'DIGITAL_SIGNATURES', 'Digital Signatures'
 
     class Status(models.TextChoices):
         """
