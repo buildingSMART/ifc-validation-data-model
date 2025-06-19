@@ -906,7 +906,8 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         """
         The type of an Validation Task.
         """
-        SYNTAX              = 'SYNTAX', 'STEP Physical File Syntax'
+        SYNTAX_HEADER       = 'SYNTAX_HEADER', 'STEP Physical File Syntax (HEADER; section)'
+        SYNTAX_DATA         = 'SYNTAX_DATA', 'STEP Physical File Syntax (DATA; section)'
         SCHEMA              = 'SCHEMA', 'Schema (EXPRESS language)'
         MVD                 = 'MVD', 'Model View Definitions'
         BSDD                = 'BSDD', 'bSDD Compliance'
