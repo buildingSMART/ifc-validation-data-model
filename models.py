@@ -573,6 +573,16 @@ class Model(TimestampedBaseModel, IdObfuscator):
         blank=False,
         help_text="Status of the Schema Validation."
     )
+    
+    status_syntax =  models.CharField(
+        max_length=1,
+        choices=Status.choices,
+        default=Status.NOT_VALIDATED,
+        db_index=True,
+        null=False,
+        blank=False,
+        help_text="Status of the Syntax Validation."
+    )
 
     status_syntax_header = models.CharField(
         max_length=1,
@@ -672,6 +682,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         self.status_ids = Model.Status.NOT_VALIDATED
         self.status_mvd = Model.Status.NOT_VALIDATED
         self.status_schema = Model.Status.NOT_VALIDATED
+        self.status_syntax = Model.Status.NOT_VALIDATED
         self.status_syntax_header = Model.Status.NOT_VALIDATED
         self.status_syntax_data = Model.Status.NOT_VALIDATED
         self.status_industry_practices = Model.Status.NOT_VALIDATED
@@ -906,6 +917,7 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         """
         The type of an Validation Task.
         """
+        SYNTAX              = 'SYNTAX', 'STEP Physical File Syntax'
         SYNTAX_HEADER       = 'SYNTAX_HEADER', 'STEP Physical File Syntax (HEADER; section)'
         SYNTAX_DATA         = 'SYNTAX_DATA', 'STEP Physical File Syntax (DATA; section)'
         SCHEMA              = 'SCHEMA', 'Schema (EXPRESS language)'
