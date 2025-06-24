@@ -593,16 +593,6 @@ class Model(TimestampedBaseModel, IdObfuscator):
         blank=False,
         help_text="Status of the Syntax Validation of the header section."
     )
-    
-    status_syntax_data = models.CharField(
-        max_length=1,
-        choices=Status.choices,
-        default=Status.NOT_VALIDATED,
-        db_index=True,
-        null=False,
-        blank=False,
-        help_text="Status of the Syntax Validation of the data section."
-    )
 
     status_industry_practices = models.CharField(
         max_length=1,
@@ -684,7 +674,6 @@ class Model(TimestampedBaseModel, IdObfuscator):
         self.status_schema = Model.Status.NOT_VALIDATED
         self.status_syntax = Model.Status.NOT_VALIDATED
         self.status_syntax_header = Model.Status.NOT_VALIDATED
-        self.status_syntax_data = Model.Status.NOT_VALIDATED
         self.status_industry_practices = Model.Status.NOT_VALIDATED
         self.status_prereq = Model.Status.NOT_VALIDATED
         self.status_header = Model.Status.NOT_VALIDATED
@@ -919,7 +908,6 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         """
         SYNTAX              = 'SYNTAX', 'STEP Physical File Syntax'
         SYNTAX_HEADER       = 'SYNTAX_HEADER', 'STEP Physical File Syntax (HEADER; section)'
-        SYNTAX_DATA         = 'SYNTAX_DATA', 'STEP Physical File Syntax (DATA; section)'
         SCHEMA              = 'SCHEMA', 'Schema (EXPRESS language)'
         MVD                 = 'MVD', 'Model View Definitions'
         BSDD                = 'BSDD', 'bSDD Compliance'
@@ -1137,7 +1125,6 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
         # errors
         SYNTAX_ERROR                           = "E00001", "Syntax Error"
         SYNTAX_HEADER_ERROR                    = "E00011", "Syntax Header Error"
-        SYNTAX_DATA_ERROR                      = "E00012", "Syntax Data Error"
         SCHEMA_ERROR                           = "E00002", "Schema Error"
         TYPE_ERROR                             = "E00010", "Type Error"
         VALUE_ERROR                            = "E00020", "Value Error"
