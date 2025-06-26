@@ -584,7 +584,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         help_text="Status of the Syntax Validation."
     )
 
-    status_syntax_header = models.CharField(
+    status_header_syntax = models.CharField(
         max_length=1,
         choices=Status.choices,
         default=Status.NOT_VALIDATED,
@@ -673,7 +673,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         self.status_mvd = Model.Status.NOT_VALIDATED
         self.status_schema = Model.Status.NOT_VALIDATED
         self.status_syntax = Model.Status.NOT_VALIDATED
-        self.status_syntax_header = Model.Status.NOT_VALIDATED
+        self.status_header_syntax = Model.Status.NOT_VALIDATED
         self.status_industry_practices = Model.Status.NOT_VALIDATED
         self.status_prereq = Model.Status.NOT_VALIDATED
         self.status_header = Model.Status.NOT_VALIDATED
@@ -907,7 +907,7 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         The type of an Validation Task.
         """
         SYNTAX              = 'SYNTAX', 'STEP Physical File Syntax'
-        SYNTAX_HEADER       = 'SYNTAX_HEADER', 'STEP Physical File Syntax (HEADER section)'
+        HEADER_SYNTAX       = 'HEADER_SYNTAX', 'STEP Physical File Syntax (HEADER section)'
         SCHEMA              = 'SCHEMA', 'Schema (EXPRESS language)'
         MVD                 = 'MVD', 'Model View Definitions'
         BSDD                = 'BSDD', 'bSDD Compliance'
@@ -1124,7 +1124,6 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
 
         # errors
         SYNTAX_ERROR                           = "E00001", "Syntax Error"
-        SYNTAX_HEADER_ERROR                    = "E00011", "Syntax Header Error"
         SCHEMA_ERROR                           = "E00002", "Schema Error"
         TYPE_ERROR                             = "E00010", "Type Error"
         VALUE_ERROR                            = "E00020", "Value Error"
