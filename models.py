@@ -573,8 +573,8 @@ class Model(TimestampedBaseModel, IdObfuscator):
         blank=False,
         help_text="Status of the Schema Validation."
     )
-    
-    status_syntax =  models.CharField(
+
+    status_syntax = models.CharField(
         max_length=1,
         choices=Status.choices,
         default=Status.NOT_VALIDATED,
