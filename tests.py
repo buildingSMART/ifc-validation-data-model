@@ -315,7 +315,7 @@ class ValidationModelsTestCase(TestCase):
         )        
         task = ValidationTask.objects.create(
             request=request, 
-            type=ValidationTask.Type.PARSE_INFO
+            type=ValidationTask.Type.HEADER
         )
         model, _ =  Model.objects.get_or_create(
             file_name = request.file_name,

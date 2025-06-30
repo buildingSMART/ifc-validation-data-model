@@ -584,6 +584,16 @@ class Model(TimestampedBaseModel, IdObfuscator):
         help_text="Status of the Syntax Validation."
     )
 
+    status_header_syntax = models.CharField(
+        max_length=1,
+        choices=Status.choices,
+        default=Status.NOT_VALIDATED,
+        db_index=True,
+        null=False,
+        blank=False,
+        help_text="Status of the Syntax Validation of the header section."
+    )
+
     status_industry_practices = models.CharField(
         max_length=1,
         choices=Status.choices,
@@ -663,6 +673,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         self.status_mvd = Model.Status.NOT_VALIDATED
         self.status_schema = Model.Status.NOT_VALIDATED
         self.status_syntax = Model.Status.NOT_VALIDATED
+        self.status_header_syntax = Model.Status.NOT_VALIDATED
         self.status_industry_practices = Model.Status.NOT_VALIDATED
         self.status_prereq = Model.Status.NOT_VALIDATED
         self.status_header = Model.Status.NOT_VALIDATED
@@ -896,6 +907,7 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         The type of an Validation Task.
         """
         SYNTAX              = 'SYNTAX', 'STEP Physical File Syntax'
+        HEADER_SYNTAX       = 'HEADER_SYNTAX', 'STEP Physical File Syntax (HEADER section)'
         SCHEMA              = 'SCHEMA', 'Schema (EXPRESS language)'
         MVD                 = 'MVD', 'Model View Definitions'
         BSDD                = 'BSDD', 'bSDD Compliance'
