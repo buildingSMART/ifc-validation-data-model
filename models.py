@@ -776,6 +776,13 @@ class ValidationRequest(AuditedBaseModel, SoftDeletableModel, IdObfuscator):
         FAILED    = 'FAILED', 'Failed'
         COMPLETED = 'COMPLETED', 'Completed'
 
+    class Channel(models.TextChoices):
+        """
+        The channel used to create a Validation Request.
+        """
+        WEBUI   = 'WEBUI', 'WebUi'
+        API     = 'API', 'Api'
+
     id = models.AutoField(
         primary_key=True,
         help_text="Identifier of the Validation Request (auto-generated).",
