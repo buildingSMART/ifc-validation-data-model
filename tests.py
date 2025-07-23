@@ -29,6 +29,22 @@ class ValidationModelsTestCase(TestCase):
         # assert
         self.assertEqual(request2.status, ValidationRequest.Status.PENDING)
 
+    def test_created_request_has_channel_webui(self):
+
+        # arrange
+        ValidationModelsTestCase.set_user_context()
+        request = ValidationRequest.objects.create(
+            file_name='test.ifc',
+            file='test.ifc',
+            size=1024
+        )
+
+        # act
+        request2 = ValidationRequest.objects.get(id=request.id)
+
+        # assert
+        self.assertEqual(request2.channel, ValidationRequest.Channel.WEBUI)
+
     def test_created_request_has_created_fields(self):
 
         # arrange
