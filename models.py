@@ -11,8 +11,9 @@ from django.contrib.auth.models import User
 local = threading.local()
 
 PRIMEMODULO = 1000000000
-COPRIMESECRET = int(os.environ.get('COPRIMESECRET', '383446691'))
+COPRIMESECRET = int(os.environ.get("COPRIMESECRET", "383446691"))
 INVERSE_COPRIME = pow(COPRIMESECRET, -1, mod=PRIMEMODULO)
+
 
 def set_user_context(user):
     """
@@ -39,15 +40,15 @@ def get_user_context():
 
 class SoftDeletableModel(models.Model):
     """An abstract base class that provides soft-deletable Models."""
-    
+
     deleted = models.BooleanField(
         null=False,
         default=False,
         db_index=True,
-        help_text='Flag to indicate object is deleted'
+        help_text="Flag to indicate object is deleted",
     )
 
-    def delete(self):        
+    def delete(self):
         """Softly delete the object."""
 
         self.deleted = True
@@ -62,14 +63,14 @@ class SoftDeletableModel(models.Model):
 
         self.deleted = False
         self.save()
-            
+
     def hard_delete(self):
         """Remove the object from the database."""
 
         super().delete()
 
     class Meta:
-        abstract=True
+        abstract = True
 
 
 class TimestampedBaseQuerySet(models.query.QuerySet):
@@ -105,7 +106,7 @@ class TimestampedBaseModel(models.Model):
         # don't use auto_add; as this will also be set on creation of this instance - see save()
         null=True,
         blank=True,
-        help_text='Timestamp this instance was last updated.'
+        help_text="Timestamp this instance was last updated.",
     )
 
     objects = TimestampedBaseQuerySet.as_manager()
@@ -114,7 +115,7 @@ class TimestampedBaseModel(models.Model):
         abstract = True
 
         # ordered in reverse-chronological order by default
-        ordering = ['-created', '-updated']
+        ordering = ["-created", "-updated"]
 
     def save(self, *args, **kwargs):
 
@@ -130,12 +131,16 @@ class TimestampedBaseModel(models.Model):
 class IdObfuscator:
     @property
     def public_id(self):
-        return self.to_public_id(self.id) # type(self).__name__[0].lower() + str(self.id * COPRIMESECRET % PRIMEMODULO)
-    
+        return self.to_public_id(
+            self.id
+        )  # type(self).__name__[0].lower() + str(self.id * COPRIMESECRET % PRIMEMODULO)
+
     @classmethod
     def to_public_id(cls, priv_id, override_cls=None):
-        return id_prefix_mapping[override_cls or cls] + str(priv_id * COPRIMESECRET % PRIMEMODULO)
-    
+        return id_prefix_mapping[override_cls or cls] + str(
+            priv_id * COPRIMESECRET % PRIMEMODULO
+        )
+
     @staticmethod
     def to_private_id(pub_id):
         return int(pub_id[1:]) * INVERSE_COPRIME % PRIMEMODULO
@@ -167,20 +172,20 @@ class AuditedBaseModel(TimestampedBaseModel):
     created_by = models.ForeignKey(
         to=settings.AUTH_USER_MODEL,
         on_delete=models.RESTRICT,
-        related_name='+',
+        related_name="+",
         null=False,
         db_index=True,
-        help_text='Who created this instance'
+        help_text="Who created this instance",
     )
 
     updated_by = models.ForeignKey(
         to=settings.AUTH_USER_MODEL,
         on_delete=models.RESTRICT,
-        related_name='+',
+        related_name="+",
         null=True,
         blank=True,
         db_index=True,
-        help_text='Who updated this instance.'
+        help_text="Who updated this instance.",
     )
 
     objects = AuditBaseQuerySet.as_manager()
@@ -208,8 +213,7 @@ class Company(TimestampedBaseModel):
     """
 
     id = models.AutoField(
-        primary_key=True,
-        help_text="Identifier of the Company (auto-generated)."
+        primary_key=True, help_text="Identifier of the Company (auto-generated)."
     )
 
     name = models.CharField(
@@ -217,7 +221,7 @@ class Company(TimestampedBaseModel):
         null=False,
         blank=False,
         unique=True,
-        help_text="Name of the Company."
+        help_text="Name of the Company.",
     )
 
     legal_name = models.CharField(
@@ -225,7 +229,7 @@ class Company(TimestampedBaseModel):
         null=True,
         blank=True,
         unique=False,
-        help_text="Legal name of the Company (optional)."
+        help_text="Legal name of the Company (optional).",
     )
 
     email_address_pattern = models.CharField(
@@ -233,7 +237,7 @@ class Company(TimestampedBaseModel):
         null=True,
         blank=True,
         unique=True,
-        help_text="Email address pattern(s) of the Company (optional)."
+        help_text="Email address pattern(s) of the Company (optional).",
     )
 
     class Meta:
@@ -244,16 +248,20 @@ class Company(TimestampedBaseModel):
 
     def __str__(self):
 
-        return f'{self.name}'
-    
+        return f"{self.name}"
+
     def find_users_by_email_pattern(self, only_new=False):
 
         if self.email_address_pattern:
-            matching_users = User.objects.filter(email__iregex=self.email_address_pattern)
-            if only_new: 
-                matching_users = matching_users.exclude(useradditionalinfo__company=self)
+            matching_users = User.objects.filter(
+                email__iregex=self.email_address_pattern
+            )
+            if only_new:
+                matching_users = matching_users.exclude(
+                    useradditionalinfo__company=self
+                )
             return matching_users if matching_users.exists() else None
-        
+
         return None
 
 
@@ -265,28 +273,28 @@ class UserAdditionalInfo(AuditedBaseModel):
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
-        help_text='What User this additional info belongs to'
+        help_text="What User this additional info belongs to",
     )
 
     is_vendor = models.BooleanField(
         null=True,
         blank=True,
-        help_text='Whether this user belongs to an Authoring Tool vendor (optional)'
+        help_text="Whether this user belongs to an Authoring Tool vendor (optional)",
     )
 
     is_vendor_self_declared = models.BooleanField(
         null=True,
         blank=True,
         verbose_name=("is vendor (self declared)"),
-        help_text='Whether this user has self-declared an affiliation with an Authoring Tool vendor (optional)'
+        help_text="Whether this user has self-declared an affiliation with an Authoring Tool vendor (optional)",
     )
 
     company = models.ForeignKey(
-        Company, 
+        Company,
         null=True,
         blank=True,
         on_delete=models.CASCADE,
-        help_text='What Company the User belongs to (optional)'
+        help_text="What Company the User belongs to (optional)",
     )
 
     class Meta:
@@ -296,13 +304,15 @@ class UserAdditionalInfo(AuditedBaseModel):
         verbose_name_plural = "User Additional Info"
 
     def find_company_by_email_pattern(self):
-        
+
         if self.email:
 
             companies = Company.objects.filter(email_address_pattern__isnull=False)
             if companies.exists():
                 for company in companies:
-                    user = User.objects.filter(id=self.id, email__iregex=company.email_address_pattern).first()
+                    user = User.objects.filter(
+                        id=self.id, email__iregex=company.email_address_pattern
+                    ).first()
                     if user:
                         return company
 
@@ -322,25 +332,25 @@ class AuthoringTool(TimestampedBaseModel):
     company = models.ForeignKey(
         to=Company,
         on_delete=models.SET_NULL,
-        related_name='company',
+        related_name="company",
         null=True,
         blank=True,
         db_index=True,
-        help_text='What Company this Authoring Tool belongs to (optional).'
+        help_text="What Company this Authoring Tool belongs to (optional).",
     )
 
     name = models.CharField(
         max_length=1024,
         null=False,
         blank=False,
-        help_text="Name of the Authoring Tool."
+        help_text="Name of the Authoring Tool.",
     )
 
     version = models.CharField(
         max_length=128,
         null=True,
         blank=True,
-        help_text="Alphanumeric version of the Authoring Tool (eg. '1.0-alpha')."
+        help_text="Alphanumeric version of the Authoring Tool (eg. '1.0-alpha').",
     )
 
     class Meta:
@@ -353,19 +363,19 @@ class AuthoringTool(TimestampedBaseModel):
             # Postgres supports NULLS DISTINCT, but not all DB's do (Sqlite does not!) - hence workaround using two constraints
             # models.UniqueConstraint(fields=['name', 'version', 'company_id'], name='unique_name_version_company', nulls_distinct=False)
             models.UniqueConstraint(
-                name='unique_name_version_company_id',
-                fields=['name', 'version', 'company_id']
+                name="unique_name_version_company_id",
+                fields=["name", "version", "company_id"],
             ),
             models.UniqueConstraint(
-                name='unique_name_version_company_id_null',
-                fields=['name', 'version'],
-                condition=Q(company_id__isnull=True)
-            )
+                name="unique_name_version_company_id_null",
+                fields=["name", "version"],
+                condition=Q(company_id__isnull=True),
+            ),
         ]
 
     def __str__(self):
 
-        return f'{self.full_name}'.strip()
+        return f"{self.full_name}".strip()
 
     @property
     def full_name(self):
@@ -374,8 +384,16 @@ class AuthoringTool(TimestampedBaseModel):
         An Authoring Tool has at least a name; company and version are optional.
         """
 
-        full_name_without_version = f'{self.company.name} - {self.name}'.strip() if self.company else f'{self.name}'.strip()
-        return f'{full_name_without_version} - {self.version}'.strip() if self.version else full_name_without_version
+        full_name_without_version = (
+            f"{self.company.name} - {self.name}".strip()
+            if self.company
+            else f"{self.name}".strip()
+        )
+        return (
+            f"{full_name_without_version} - {self.version}".strip()
+            if self.version
+            else full_name_without_version
+        )
 
     def find_by_full_name(full_name):
         """
@@ -384,13 +402,20 @@ class AuthoringTool(TimestampedBaseModel):
         """
 
         def full_name_without_version_dash(full_name):
-            without_version = full_name.rpartition(' - ')  # last dash only
-            return '{} {}'.format(without_version[0].strip(), without_version[2].strip())
+            without_version = full_name.rpartition(" - ")  # last dash only
+            return "{} {}".format(
+                without_version[0].strip(), without_version[2].strip()
+            )
 
         def matches(obj, full_name):
-            return (full_name == obj.full_name or full_name == full_name_without_version_dash(obj.full_name))
+            return (
+                full_name == obj.full_name
+                or full_name == full_name_without_version_dash(obj.full_name)
+            )
 
-        found = [obj for obj in AuthoringTool.objects.all() if matches(obj, full_name)] # cannot use a property to filter...
+        found = [
+            obj for obj in AuthoringTool.objects.all() if matches(obj, full_name)
+        ]  # cannot use a property to filter...
 
         if found is None or len(found) == 0:
             return None
@@ -434,11 +459,11 @@ class Model(TimestampedBaseModel, IdObfuscator):
     produced_by = models.ForeignKey(
         to=AuthoringTool,
         on_delete=models.SET_NULL,
-        related_name='models',
+        related_name="models",
         null=True,
         blank=True,
         db_index=True,
-        help_text='What tool was used to create this Model.'
+        help_text="What tool was used to create this Model.",
     )
 
     date = models.DateTimeField(
@@ -457,7 +482,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         max_length=1024,
         null=False,
         blank=False,
-        help_text="Original name of the file that contained this Model."
+        help_text="Original name of the file that contained this Model.",
     )
 
     file = models.CharField(
@@ -479,32 +504,32 @@ class Model(TimestampedBaseModel, IdObfuscator):
         db_index=True,
         null=False,
         blank=False,
-        help_text="License of the Model."
+        help_text="License of the Model.",
     )
 
     mvd = models.CharField(
         max_length=150,
         null=True,
         blank=True,
-        help_text="MVD Classification of the Model."
+        help_text="MVD Classification of the Model.",
     )
 
     number_of_elements = models.PositiveIntegerField(
         null=True,
         blank=True,
-        help_text="Number of elements within the Model."        
+        help_text="Number of elements within the Model."
     )
 
     number_of_geometries = models.PositiveIntegerField(
         null=True,
         blank=True,
-        help_text="Number of geometries within the Model."        
+        help_text="Number of geometries within the Model."
     )
 
     number_of_properties = models.PositiveIntegerField(
         null=True,
         blank=True,
-        help_text="Number of properties within the Model."        
+        help_text="Number of properties within the Model."
     )
 
     schema = models.CharField(
@@ -521,7 +546,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         db_index=True,
         null=False,
         blank=False,
-        help_text="Status of the bSDD Validation."
+        help_text="Status of the bSDD Validation.",
     )
 
     status_ia = models.CharField(
@@ -531,7 +556,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         db_index=True,
         null=False,
         blank=False,
-        help_text="Status of the IA Validation."
+        help_text="Status of the IA Validation.",
     )
 
     status_ip = models.CharField(
@@ -541,7 +566,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         db_index=True,
         null=False,
         blank=False,
-        help_text="Status of the IP Validation."
+        help_text="Status of the IP Validation.",
     )
 
     status_ids = models.CharField(
@@ -551,7 +576,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         db_index=True,
         null=False,
         blank=False,
-        help_text="Status of the IDS Validation."
+        help_text="Status of the IDS Validation.",
     )
 
     status_mvd = models.CharField(
@@ -561,7 +586,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         db_index=True,
         null=False,
         blank=False,
-        help_text="Status of the MVD Validation."
+        help_text="Status of the MVD Validation.",
     )
 
     status_schema = models.CharField(
@@ -571,7 +596,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         db_index=True,
         null=False,
         blank=False,
-        help_text="Status of the Schema Validation."
+        help_text="Status of the Schema Validation.",
     )
 
     status_syntax = models.CharField(
@@ -581,7 +606,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         db_index=True,
         null=False,
         blank=False,
-        help_text="Status of the Syntax Validation."
+        help_text="Status of the Syntax Validation.",
     )
 
     status_header_syntax = models.CharField(
@@ -591,7 +616,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         db_index=True,
         null=False,
         blank=False,
-        help_text="Status of the Syntax Validation of the header section."
+        help_text="Status of the Syntax Validation of the header section.",
     )
 
     status_industry_practices = models.CharField(
@@ -601,7 +626,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         db_index=True,
         null=False,
         blank=False,
-        help_text="Status of the Industry Practices Validation."
+        help_text="Status of the Industry Practices Validation.",
     )
 
     status_prereq = models.CharField(
@@ -611,9 +636,9 @@ class Model(TimestampedBaseModel, IdObfuscator):
         db_index=True,
         null=False,
         blank=False,
-        help_text="Status of the Prerequisites Validation."
+        help_text="Status of the Prerequisites Validation.",
     )
-    
+
     status_header = models.CharField(
         max_length=1,
         choices=Status.choices,
@@ -621,7 +646,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         db_index=True,
         null=False,
         blank=False,
-        help_text="Status of the Header Validation."
+        help_text="Status of the Header Validation.",
     )
 
     status_signatures = models.CharField(
@@ -631,16 +656,16 @@ class Model(TimestampedBaseModel, IdObfuscator):
         db_index=True,
         null=False,
         blank=False,
-        help_text="Status of the Digital Signatures Validation."
+        help_text="Status of the Digital Signatures Validation.",
     )
 
     uploaded_by = models.ForeignKey(
         to=settings.AUTH_USER_MODEL,
         on_delete=models.RESTRICT,
-        related_name='models',
+        related_name="models",
         null=False,
         db_index=True,
-        help_text='Who uploaded this Model.'
+        help_text="Who uploaded this Model.",
     )
 
     properties = models.JSONField(
@@ -648,7 +673,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         blank=True,
         help_text="Properties of the Model."
     )
-    
+
     header_validation = models.JSONField(
         null=True,
         blank=True,
@@ -662,7 +687,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
 
     def __str__(self):
 
-        return f'#{self.id} - {self.created.date()} - {self.file_name}'
+        return f"#{self.id} - {self.created.date()} - {self.file_name}"
 
     def reset_status(self):
 
@@ -693,18 +718,18 @@ class ModelInstance(TimestampedBaseModel, IdObfuscator):
     model = models.ForeignKey(
         to=Model,
         on_delete=models.CASCADE,
-        related_name='instances',
+        related_name="instances",
         blank=False,
         null=False,
         db_index=True,
-        help_text='What Model this Model Instance is a part of.'
+        help_text="What Model this Model Instance is a part of.",
     )
 
     stepfile_id = models.PositiveBigIntegerField(
         null=False,
         blank=False,
         db_index=True,
-        help_text='id assigned within the Step File (eg. #11)'
+        help_text="id assigned within the Step File (eg. #11)",
     )
 
     ifc_type = models.CharField(
@@ -727,12 +752,14 @@ class ModelInstance(TimestampedBaseModel, IdObfuscator):
         verbose_name_plural = "Model Instances"
 
         constraints = [
-            models.UniqueConstraint(fields=['model_id', 'stepfile_id'], name='modelid_stepfileid')
+            models.UniqueConstraint(
+                fields=["model_id", "stepfile_id"], name="modelid_stepfileid"
+            )
         ]
 
     def __str__(self):
 
-        return f'#{self.id} - {self.ifc_type} - {self.model.file_name}'
+        return f"#{self.id} - {self.ifc_type} - {self.model.file_name}"
 
 
 class ValidationRequest(AuditedBaseModel, SoftDeletableModel, IdObfuscator):
@@ -742,24 +769,31 @@ class ValidationRequest(AuditedBaseModel, SoftDeletableModel, IdObfuscator):
 
     class Status(models.TextChoices):
         """
-        The overall status of an Validation Request.
+        The overall status of a Validation Request.
         """
         PENDING   = 'PENDING', 'Pending'
         INITIATED = 'INITIATED', 'Initiated'
         FAILED    = 'FAILED', 'Failed'
         COMPLETED = 'COMPLETED', 'Completed'
 
+    class Channel(models.TextChoices):
+        """
+        The channel used to create a Validation Request.
+        """
+        WEBUI   = 'WEBUI', 'WebUi'
+        API     = 'API', 'Api'
+
     id = models.AutoField(
         primary_key=True,
-        help_text="Identifier of the Validation Request (auto-generated)."
+        help_text="Identifier of the Validation Request (auto-generated).",
     )
 
     file_name = models.CharField(
         max_length=1024,
         null=False,
         blank=False,
-        verbose_name='file name',
-        help_text="Name of the file."
+        verbose_name="file name",
+        help_text="Name of the file.",
     )
 
     file = models.FileField(
@@ -779,58 +813,66 @@ class ValidationRequest(AuditedBaseModel, SoftDeletableModel, IdObfuscator):
         db_index=True,
         null=False,
         blank=False,
-        help_text="Current status of the Validation Request."
+        help_text="Current status of the Validation Request.",
     )
 
     status_reason = models.TextField(
-        null=True,
-        blank=True,
-        help_text="Reason for current status."
+        null=True, blank=True, help_text="Reason for current status."
     )
 
     started = models.DateTimeField(
         null=True,
         db_index=True,
-        verbose_name='started',
-        help_text="Timestamp the Validation Request was started."
+        verbose_name="started",
+        help_text="Timestamp the Validation Request was started.",
     )
 
     completed = models.DateTimeField(
         null=True,
         db_index=True,
-        verbose_name='completed',
-        help_text="Timestamp the Validation Request completed."
+        verbose_name="completed",
+        help_text="Timestamp the Validation Request completed.",
     )
 
     progress = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
         db_index=True,
-        help_text="Overall progress (%) of the Validation Request."
+        help_text="Overall progress (%) of the Validation Request.",
     )
 
     model = models.OneToOneField(
         to=Model,
         on_delete=models.CASCADE,
-        related_name='request',
+        related_name="request",
         null=True,
         db_index=True,
-        help_text='What Model is created based on this Validation Request.'
+        help_text="What Model is created based on this Validation Request.",
+    )
+
+    channel = models.CharField(
+        max_length=10,
+        choices=Channel.choices,
+        default=Channel.API,
+        db_index=True,
+        null=False,
+        blank=False,
+        help_text="What channel was used to create this Validation Request.",
     )
 
     class Meta:
 
         db_table = "ifc_validation_request"
-        indexes = [models.Index(fields=["file_name", "status"])]  # only add multi-column indexes here
+        indexes = [
+            models.Index(fields=["file_name", "status"])
+        ]  # only add multi-column indexes here
         verbose_name = "Validation Request"
         verbose_name_plural = "Validation Requests"
-        permissions = [
-            ("change_status", "Can change status of Validation Request")
-        ]
+        permissions = [("change_status", "Can change status of Validation Request")]
 
     def __str__(self):
 
-        return f'#{self.id} - {self.created.date()} - {self.file_name}'
+        return f"#{self.id} - {self.created.date()} - {self.file_name}"
 
     @property
     def has_final_status(self):
@@ -845,15 +887,19 @@ class ValidationRequest(AuditedBaseModel, SoftDeletableModel, IdObfuscator):
     def duration(self):
 
         if self.started and self.completed:
-            return (self.completed - self.started)
+            return self.completed - self.started
         elif self.started:
-            return (timezone.now() - self.started)
+            return timezone.now() - self.started
         else:
             return None
-        
+
     @property
     def model_public_id(self):
-        return IdObfuscator.to_public_id(self.model_id, override_cls=Model) if self.model_id else None
+        return (
+            IdObfuscator.to_public_id(self.model_id, override_cls=Model)
+            if self.model_id
+            else None
+        )
 
     def mark_as_initiated(self, reason=None):
 
@@ -932,18 +978,17 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         COMPLETED      = 'COMPLETED', 'Completed'
 
     id = models.AutoField(
-        primary_key=True,
-        help_text="Identifier of the task (auto-generated)."
+        primary_key=True, help_text="Identifier of the task (auto-generated)."
     )
 
     request = models.ForeignKey(
         to=ValidationRequest,
         on_delete=models.CASCADE,
-        related_name='tasks',
+        related_name="tasks",
         blank=False,
         null=False,
         db_index=True,
-        help_text='What Validation Request this Validation Task belongs to.'
+        help_text="What Validation Request this Validation Task belongs to.",
     )
 
     type = models.CharField(
@@ -952,7 +997,7 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         db_index=True,
         null=False,
         blank=False,
-        help_text="Type of the Validation Task."
+        help_text="Type of the Validation Task.",
     )
 
     status = models.CharField(
@@ -962,7 +1007,7 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         db_index=True,
         null=False,
         blank=False,
-        help_text="Current status of the Validation Task."
+        help_text="Current status of the Validation Task.",
     )
 
     status_reason = models.TextField(
@@ -974,34 +1019,34 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
     started = models.DateTimeField(
         null=True,
         db_index=True,
-        verbose_name='started',
-        help_text="Timestamp the Validation Task was started."
+        verbose_name="started",
+        help_text="Timestamp the Validation Task was started.",
     )
 
     ended = models.DateTimeField(
         null=True,
         db_index=True,
-        verbose_name='ended',
-        help_text="Timestamp the Validation Task ended."
+        verbose_name="ended",
+        help_text="Timestamp the Validation Task ended.",
     )
 
     progress = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
         db_index=True,
-        help_text="Overall progress (%) of the Validation Task."
+        help_text="Overall progress (%) of the Validation Task.",
     )
 
     process_id = models.PositiveIntegerField(
         null=True,
         blank=True,
-        help_text="Process id of subprocess executing the Validation Task."
+        help_text="Process id of subprocess executing the Validation Task.",
     )
 
     process_cmd = models.TextField(
         null=True,
         blank=True,
-        help_text="Command and arguments used to launch the subprocess executing the Validation Task."
+        help_text="Command and arguments used to launch the subprocess executing the Validation Task.",
     )
 
     class Meta:
@@ -1012,7 +1057,7 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
 
     def __str__(self):
 
-        return f'#{self.id} - {self.request.file_name} - {self.type} - {self.created.date()} - {self.status}'
+        return f"#{self.id} - {self.request.file_name} - {self.type} - {self.created.date()} - {self.status}"
 
     @property
     def has_final_status(self):
@@ -1021,7 +1066,7 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
             self.Status.SKIPPED,
             self.Status.FAILED,
             self.Status.NOT_APPLICABLE,
-            self.Status.COMPLETED
+            self.Status.COMPLETED,
         ]
         return self.status in FINAL_STATUS_LIST
 
@@ -1029,15 +1074,19 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
     def duration(self):
 
         if self.started and self.ended:
-            return (self.ended - self.started)
+            return self.ended - self.started
         elif self.started:
-            return (timezone.now() - self.started)
+            return timezone.now() - self.started
         else:
             return None
-        
+
     @property
     def request_public_id(self):
-        return IdObfuscator.to_public_id(self.request_id, override_cls=ValidationRequest) if self.request_id else None
+        return (
+            IdObfuscator.to_public_id(self.request_id, override_cls=ValidationRequest)
+            if self.request_id
+            else None
+        )
 
     def mark_as_initiated(self):
 
@@ -1078,20 +1127,29 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         """
         Aggregates Severity of all Outcomes into one final Status value.
         """
-        
+
         agg_status = None
         for outcome in self.outcomes.iterator():
-            if outcome.severity == ValidationOutcome.OutcomeSeverity.NOT_APPLICABLE and agg_status is None:
+            if (
+                outcome.severity == ValidationOutcome.OutcomeSeverity.NOT_APPLICABLE
+                and agg_status is None
+            ):
                 agg_status = Model.Status.NOT_APPLICABLE
-            elif outcome.severity == ValidationOutcome.OutcomeSeverity.EXECUTED and agg_status in [None, Model.Status.NOT_APPLICABLE]:
+            elif (
+                outcome.severity == ValidationOutcome.OutcomeSeverity.EXECUTED
+                and agg_status in [None, Model.Status.NOT_APPLICABLE]
+            ):
                 agg_status = Model.Status.VALID
-            elif outcome.severity == ValidationOutcome.OutcomeSeverity.PASSED and agg_status in [None, Model.Status.NOT_APPLICABLE]:
+            elif (
+                outcome.severity == ValidationOutcome.OutcomeSeverity.PASSED
+                and agg_status in [None, Model.Status.NOT_APPLICABLE]
+            ):
                 agg_status = Model.Status.VALID
             elif outcome.severity == ValidationOutcome.OutcomeSeverity.WARNING:
                 agg_status = Model.Status.WARNING
             elif outcome.severity == ValidationOutcome.OutcomeSeverity.ERROR:
                 agg_status = Model.Status.INVALID
-                break # can't get any worse...
+                break  # can't get any worse...
 
         # assume valid if no outcomes - TODO: is this correct?
         if agg_status is None:
@@ -1146,47 +1204,47 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
         ALIGNMENT_CONTAINS_BUSINESS_LOGIC_ONLY = "W00010", "Alignment Contains Business Logic Only"
         ALIGNMENT_CONTAINS_GEOMETRY_ONLY       = "W00020", "Alignment Contains Geometry Only"
         WARNING                                = "W00030", "Warning"
-        
+
         EXECUTED                               = "X00040", "Executed"
 
-    _inst = None # temp internal-use attribute to store the instance of the model being validated for further use in behave statements
+    _inst = None  # temp internal-use attribute to store the instance of the model being validated for further use in behave statements
 
     id = models.AutoField(
         primary_key=True,
-        help_text="Identifier of the Validation Outcome (auto-generated)."
+        help_text="Identifier of the Validation Outcome (auto-generated).",
     )
 
     instance = models.ForeignKey(
         to=ModelInstance,
         on_delete=models.CASCADE,
-        related_name='outcomes',
+        related_name="outcomes",
         null=True,
         db_index=True,
-        help_text='What Model Instance this Outcome is applicable to (optional).'
+        help_text="What Model Instance this Outcome is applicable to (optional).",
     )
 
     validation_task = models.ForeignKey(
         to=ValidationTask,
         on_delete=models.CASCADE,
-        related_name='outcomes',
+        related_name="outcomes",
         blank=False,
         null=False,
         db_index=True,
-        help_text='What Validation Task this Outcome belongs to.'
+        help_text="What Validation Task this Outcome belongs to.",
     )
 
     feature = models.CharField(
         max_length=1024,
         null=True,
         blank=True,
-        help_text="Name of the Gherkin Feature (optional)."
+        help_text="Name of the Gherkin Feature (optional).",
     )
 
     feature_version = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
         db_index=True,
-        help_text="Version number of the Gherkin Feature (optional)."
+        help_text="Version number of the Gherkin Feature (optional).",
     )
 
     severity = models.PositiveSmallIntegerField(
@@ -1195,14 +1253,14 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
         db_index=True,
         null=False,
         blank=False,
-        help_text="Severity of the Validation Outcome."
+        help_text="Severity of the Validation Outcome.",
     )
 
     outcome_code = models.CharField(
         max_length=10,
         choices=ValidationOutcomeCode.choices,
         default=ValidationOutcomeCode.NOT_APPLICABLE,
-        help_text="Code representing the Validation Outcome."
+        help_text="Code representing the Validation Outcome.",
     )
 
     expected = models.JSONField(
@@ -1223,19 +1281,19 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
         verbose_name_plural = "Validation Outcomes"
         indexes = [
             models.Index(fields=["feature", "feature_version"]),
-            models.Index(fields=["feature", "feature_version", "severity"])
+            models.Index(fields=["feature", "feature_version", "severity"]),
         ]
 
     def __str__(self):
         members = {
-            'Feature': (self.feature or '').split('-')[0].strip(),
-            'Outcome': self.outcome_code,
-            'Severity': repr(self.severity).split('.')[-1],
-            'ifc_instance_id': self.instance_id,
-            'Expected': self.expected,
-            'Observed': self.observed
+            "Feature": (self.feature or "").split("-")[0].strip(),
+            "Outcome": self.outcome_code,
+            "Severity": repr(self.severity).split(".")[-1],
+            "ifc_instance_id": self.instance_id,
+            "Expected": self.expected,
+            "Observed": self.observed,
         }
-        return f' '.join(f'{k}={v}' for k, v in members.items() if v)
+        return f" ".join(f"{k}={v}" for k, v in members.items() if v)
 
     def to_dict(self):
         return {
@@ -1249,14 +1307,24 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
             "expected": self.expected,
             "observed": self.observed,
         }
-    
+
     @property
     def instance_public_id(self):
-        return IdObfuscator.to_public_id(self.instance_id, override_cls=ModelInstance) if self.instance_id else None
+        return (
+            IdObfuscator.to_public_id(self.instance_id, override_cls=ModelInstance)
+            if self.instance_id
+            else None
+        )
 
     @property
     def validation_task_public_id(self):
-        return IdObfuscator.to_public_id(self.validation_task_id, override_cls=ValidationTask) if self.validation_task_id else None
+        return (
+            IdObfuscator.to_public_id(
+                self.validation_task_id, override_cls=ValidationTask
+            )
+            if self.validation_task_id
+            else None
+        )
 
     @property
     def inst(self):
@@ -1267,31 +1335,29 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
         self._inst = value
 
     def determine_severity(self):
-        
+
         match self.name[0]:
-            case 'X':
+            case "X":
                 return self.OutcomeSeverity.EXECUTED
-            case 'P':
+            case "P":
                 return self.OutcomeSeverity.PASSED
-            case 'N':
+            case "N":
                 return self.OutcomeSeverity.NOT_APPLICABLE
-            case 'W':
+            case "W":
                 return self.OutcomeSeverity.WARNING
-            case 'E':
+            case "E":
                 return self.OutcomeSeverity.ERROR
             case _:
                 raise ValueError(f"Outcome code '{self.name}' not recognized")
 
 
 class Version(TimestampedBaseModel):
-
     """
     A model to store and track Validation Service software versions.
     """
 
     id = models.AutoField(
-        primary_key=True,
-        help_text="Identifier of the Version (auto-generated)."
+        primary_key=True, help_text="Identifier of the Version (auto-generated)."
     )
 
     name = models.CharField(
@@ -1300,20 +1366,18 @@ class Version(TimestampedBaseModel):
         blank=False,
         unique=True,
         db_index=True,
-        help_text="Name of the Version, eg. 0.6.8"
+        help_text="Name of the Version, eg. 0.6.8",
     )
 
     released = models.DateTimeField(
-        null=False,
-        blank=False,
-        help_text="Timestamp the Version was released."
+        null=False, blank=False, help_text="Timestamp the Version was released."
     )
 
     release_notes = models.TextField(
         max_length=255,
         null=True,
         blank=True,
-        help_text="Description or URL of the Release Notes (optional)."
+        help_text="Description or URL of the Release Notes (optional).",
     )
 
     class Meta:
@@ -1324,14 +1388,14 @@ class Version(TimestampedBaseModel):
 
     def __str__(self):
 
-        return f'{self.name}'
+        return f"{self.name}"
 
 
 id_prefix_mapping = {
-    Model: 'm',
-    ModelInstance: 'i',
-    ValidationRequest: 'r',
-    ValidationTask: 't',
-    ValidationOutcome: 'o',
-    User: 'u',
+    Model: "m",
+    ModelInstance: "i",
+    ValidationRequest: "r",
+    ValidationTask: "t",
+    ValidationOutcome: "o",
+    User: "u",
 }
