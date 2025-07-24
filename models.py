@@ -853,7 +853,7 @@ class ValidationRequest(AuditedBaseModel, SoftDeletableModel, IdObfuscator):
     channel = models.CharField(
         max_length=10,
         choices=Channel.choices,
-        default=Channel.WEBUI,
+        default=Channel.API,
         db_index=True,
         null=False,
         blank=False,
