@@ -3,6 +3,7 @@ import threading
 
 from django.db import models
 from django.db.models import Q
+from django.db.models.functions import Lower
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
@@ -318,6 +319,9 @@ class UserAdditionalInfo(AuditedBaseModel):
 
         return None
 
+    def find_user_by_username(username):
+
+        return User.objects.filter(username__iexact=username).first()
 
 class AuthoringTool(TimestampedBaseModel):
     """

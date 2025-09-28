@@ -448,3 +448,31 @@ class ValidationModelsTestCase(TestCase):
         # assert
         self.assertIsNone(company1)
         self.assertIsNone(company2)
+    
+    def test_find_user_by_username_should_succeed(self):
+
+        # arrange
+        ValidationModelsTestCase.set_user_context()
+        user = User.objects.create(id=2, username='JohnDoe', email='jdoe@acme.com', is_active=True)
+
+        # act
+        result = UserAdditionalInfo.find_user_by_username('johndoe') # notice: all lower case
+        result2 = UserAdditionalInfo.find_user_by_username('JOHNDOE') # notice: all upper case
+
+        # assert
+        self.assertIsNotNone(result)
+        self.assertIsNotNone(result2)
+        self.assertEqual(user, result)
+        self.assertEqual(user, result2)
+
+    def test_find_user_by_username_should_return_none(self):
+
+        # arrange
+        ValidationModelsTestCase.set_user_context()
+        user = User.objects.create(id=2, username='JohnDoe', email='jdoe@acme.com', is_active=True)
+
+        # act
+        result = UserAdditionalInfo.find_user_by_username('jane')
+
+        # assert
+        self.assertIsNone(result)
