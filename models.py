@@ -1297,7 +1297,7 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
             "Expected": self.expected,
             "Observed": self.observed,
         }
-        return f" ".join(f"{k}={v}" for k, v in members.items() if v)
+        return f' '.join(f'{k}={repr(v)}' for k, v in members.items() if v is not None)
 
     def to_dict(self):
         return {
