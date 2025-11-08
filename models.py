@@ -613,6 +613,16 @@ class Model(TimestampedBaseModel, IdObfuscator):
         help_text="Status of the Syntax Validation.",
     )
 
+    status_magic_clamav = models.CharField(
+        max_length=1,
+        choices=Status.choices,
+        default=Status.NOT_VALIDATED,
+        db_index=True,
+        null=False,
+        blank=False,
+        help_text="Status of the file magic and anti-virus checks.",
+    )
+
     status_header_syntax = models.CharField(
         max_length=1,
         choices=Status.choices,
@@ -956,6 +966,7 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         """
         The type of an Validation Task.
         """
+        MAGIC_AND_CLAMAV    = 'MAGIC_AND_CLAMAV', 'File magic and anti-virus checks',
         SYNTAX              = 'SYNTAX', 'STEP Physical File Syntax'
         HEADER_SYNTAX       = 'HEADER_SYNTAX', 'STEP Physical File Syntax (HEADER section)'
         SCHEMA              = 'SCHEMA', 'Schema (EXPRESS language)'
