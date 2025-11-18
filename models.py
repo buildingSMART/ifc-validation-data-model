@@ -812,6 +812,7 @@ class ValidationRequest(AuditedBaseModel, SoftDeletableModel, IdObfuscator):
 
     file = models.FileField(
         null=False,
+        max_length=2048,
         help_text="Path of the file."
     )
 
