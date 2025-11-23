@@ -49,9 +49,6 @@ class ValidationOutcomeCode(str, Enum):
     EXECUTED = "X00040"
 
 
-SeverityLike = Union[int, OutcomeSeverity]
-
-
 class FrozenDict(frozenset):
     def __repr__(self):
         return repr(dict(self))
@@ -83,6 +80,10 @@ def unfreeze(obj):
     """
     if isinstance(obj, FrozenDict):
         return {k: unfreeze(v) for k, v in obj}
+    elif isinstance(obj, (set, frozenset)):
+        return list(map(unfreeze, obj))
+    elif isinstance(obj, (list, tuple)):
+        return tuple(unfreeze(v) for v in obj)
     else:
         return obj
 
@@ -95,7 +96,7 @@ class ValidationOutcome:
     inst: Optional[int] = None
     feature: Optional[str] = None
     feature_version: Optional[int] = None
-    severity: SeverityLike
+    severity: OutcomeSeverity
     outcome_code: ValidationOutcomeCode = None
     expected: Optional[JSONLike] = None
     observed: Optional[JSONLike] = None
@@ -108,7 +109,7 @@ class ValidationOutcome:
             "validation_task_id": validation_task_public_id,
             "feature": self.feature,
             "feature_version": self.feature_version,
-            "severity": int(self.severity),
+            "severity": self.severity.name,
             "outcome_code": str(self.outcome_code),
             "expected": unfreeze(self.expected),
             "observed": unfreeze(self.observed),
