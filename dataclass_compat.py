@@ -109,7 +109,7 @@ class ValidationOutcome:
             "validation_task_id": validation_task_public_id,
             "feature": self.feature,
             "feature_version": self.feature_version,
-            "severity": self.severity.name if validation_task_public_id else int(self.severity),
+            "severity": int(self.severity) if validation_task_public_id is not None else self.severity.name,
             "outcome_code": str(self.outcome_code),
             "expected": unfreeze(self.expected),
             "observed": unfreeze(self.observed),
