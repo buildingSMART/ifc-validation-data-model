@@ -812,6 +812,7 @@ class ValidationRequest(AuditedBaseModel, SoftDeletableModel, IdObfuscator):
 
     file = models.FileField(
         null=False,
+        max_length=2048,
         help_text="Path of the file."
     )
 
@@ -1308,7 +1309,7 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
             "Expected": self.expected,
             "Observed": self.observed,
         }
-        return f" ".join(f"{k}={v}" for k, v in members.items() if v)
+        return f' '.join(f'{k}={repr(v)}' for k, v in members.items() if v is not None)
 
     def to_dict(self):
         return {
