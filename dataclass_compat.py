@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import IntEnum, Enum
 import sys
-from typing import Any, Optional, Union, Mapping, Sequence
+from typing import Any, Optional, Union, Sequence
+from collections.abc import Mapping
 
 JSONLike = Union[None, bool, int, float, str, Mapping[str, Any], Sequence[Any]]
 
@@ -52,7 +53,11 @@ class ValidationOutcomeCode(str, Enum):
 class FrozenDict(frozenset):
     def __repr__(self):
         return f"FrozenDict({repr(dict(self))})"
+    def items(self):
+        return dict(self).items()
 
+# Do not inherited concretely, because we don't want to inherit methods like __hash__ from Mapping
+Mapping.register(FrozenDict)
 
 def freeze(obj):
     """
