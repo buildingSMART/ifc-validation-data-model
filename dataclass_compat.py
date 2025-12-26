@@ -51,7 +51,7 @@ class ValidationOutcomeCode(str, Enum):
 
 class FrozenDict(frozenset):
     def __repr__(self):
-        return repr(dict(self))
+        return f"FrozenDict({repr(dict(self))})"
 
 
 def freeze(obj):
@@ -60,7 +60,9 @@ def freeze(obj):
     Lists and tuples are converted to tuples.
     Strings are interned (todo benchmark)
     """
-    if isinstance(obj, Mapping):
+    if isinstance(obj, FrozenDict):
+        return obj
+    elif isinstance(obj, Mapping):
         return FrozenDict((k, freeze(v)) for k, v in obj.items())
     elif isinstance(obj, (list, tuple)):
         return tuple(freeze(v) for v in obj)
