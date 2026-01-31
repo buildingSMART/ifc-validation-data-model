@@ -1,11 +1,12 @@
+from enum import Enum
 import os
 import threading
 
 from django.db import models
-from django.db.models import Q
+from django.db.models import Q, QuerySet
 from django.db.models.functions import Lower
 from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.utils import timezone
 from django.contrib.auth.models import User
 
@@ -981,6 +982,7 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         INDUSTRY_PRACTICES  = 'INDUSTRY', 'Industry Practices'
         INSTANCE_COMPLETION = 'INST_COMPLETION', 'Instance Completion'
         DIGITAL_SIGNATURES  = 'DIGITAL_SIGNATURES', 'Digital Signatures'
+        WHITELISTING        = 'WHITELISTING', 'Whitelisting'
 
     class Status(models.TextChoices):
         """
@@ -1406,6 +1408,141 @@ class Version(TimestampedBaseModel):
 
         return f"{self.name}"
 
+from django.db.models.functions import Cast
+from django.db.models import TextField
+
+class WhiteListEntry(AuditedBaseModel):
+    id = models.AutoField(
+        primary_key=True, help_text="Identifier of the Whitelist Entry (auto-generated)."
+    )
+
+    description = models.CharField(
+        max_length=255,
+        blank=True,
+    )
+
+    def __str__(self):
+        return f"#{self.id}: {self.description}: {' | '.join(map(str, self.fragments.all()))}"
+
+    def apply(self, outcomes_query_set : QuerySet):
+        q = Q()
+
+        annotations = {}
+        def ensure_text_cast(path: str) -> str:
+            key = f"_wl_text__{path}"
+            if key not in annotations:
+                annotations[key] = Cast(path, TextField())
+            return key
+
+        for f in self.fragments.all():
+            col = f.column
+            op = f.operation
+            rhs = (f.right_hand_side or "").strip()
+            kind = f.column_kind
+
+            if kind == WhiteListQueryFragment.ColumnKind.INT:
+                rhs_int = int(rhs)
+                q &= Q(**{col: rhs_int})
+            elif kind == WhiteListQueryFragment.ColumnKind.JSON:
+                ann = ensure_text_cast(col)
+                q &= Q(**{f"{ann}__icontains": rhs})
+            elif op == WhiteListQueryFragment.Operation.EQUALS:
+                q &= Q(**{f"{col}__iexact": rhs})
+            elif op == WhiteListQueryFragment.Operation.CONTAINS:
+                q &= Q(**{f"{col}__icontains": rhs})
+
+        if annotations:
+            outcomes_query_set = outcomes_query_set.annotate(**annotations)
+
+        return outcomes_query_set.filter(q)
+
+class WhiteListQueryFragment(models.Model):
+    class ColumnKind(Enum):
+        TEXT = "text"
+        INT  = "int"
+        JSON = "json"
+
+    class OutcomeColumn(models.TextChoices):
+        """
+        Outcome column to query
+        """
+        INSTANCE_TYPE = 'instance__ifc_type', 'Instance type'
+        TASK_TYPE = 'validation_task__type', 'Task type'
+        FEATURE = 'feature', 'Feature'
+        FEATURE_VERSION = 'feature_version', 'Feature version'
+        EXPECTED = 'expected', 'Expected'
+        OBSERVED = 'observed', 'Observed'
+        MODEL_SCHEMA = 'validation_task__request__model__schema', 'Model schema'
+
+    class Operation(models.TextChoices):
+        EQUALS = 'EQUALS', 'Equals'
+        CONTAINS = 'CONTAINS', 'Contains'
+
+    id = models.AutoField(
+        primary_key=True, help_text="Identifier of the Query Fragment (auto-generated)."
+    )
+
+    column = models.CharField(
+        max_length=39,
+        choices=OutcomeColumn.choices,
+        help_text="Outcome column this query fragment is bound to",
+    )
+
+    operation = models.CharField(
+        max_length=8,
+        choices=Operation.choices,
+        help_text="Predicate this query fragment is based on to",
+    )
+
+    right_hand_side = models.TextField(
+        max_length=255,
+        help_text="Right hand side of the query fragment",
+    )
+
+    whitelist_entry = models.ForeignKey(
+        WhiteListEntry,
+        related_name="fragments",
+        on_delete=models.CASCADE,
+        help_text="What Whitelist Entry this fragment is part of",
+    )
+
+    _KIND_BY_COLUMN = {
+        OutcomeColumn.EXPECTED: ColumnKind.JSON,
+        OutcomeColumn.OBSERVED: ColumnKind.JSON,
+        OutcomeColumn.FEATURE_VERSION: ColumnKind.INT,
+        OutcomeColumn.INSTANCE_TYPE: ColumnKind.TEXT,
+        OutcomeColumn.TASK_TYPE: ColumnKind.TEXT,
+        OutcomeColumn.FEATURE: ColumnKind.TEXT,
+        OutcomeColumn.MODEL_SCHEMA: ColumnKind.TEXT,
+    }
+
+    def __str__(self):
+        return f"({self.column} {self.operation} {self.right_hand_side})"
+
+    @property
+    def column_kind(self) -> ColumnKind:
+        try:
+            return self._KIND_BY_COLUMN[self.column]
+        except KeyError:
+            return WhiteListQueryFragment.ColumnKind.TEXT
+
+    def clean(self):
+        rhs = (self.right_hand_side or "").strip()
+        if rhs == "":
+            raise ValidationError({"right_hand_side": "Right-hand side cannot be empty."})
+
+        if self.column_kind == WhiteListQueryFragment.ColumnKind.INT:
+            try:
+                int(rhs)
+            except (TypeError, ValueError):
+                raise ValidationError({"right_hand_side": f"RHS must be an integer for column '{self.column}'."})
+        
+        if self.operation == WhiteListQueryFragment.Operation.EQUALS:
+            if self.column_kind == WhiteListQueryFragment.ColumnKind.JSON:
+                raise ValidationError({"operation": f"Equals is not supported for JSON column type on column '{self.column}'."})
+        else:
+            if self.column_kind == WhiteListQueryFragment.ColumnKind.INT:
+                raise ValidationError({"operation": f"Contains is not supported for INT column type on column '{self.column}'."})
 
 id_prefix_mapping = {
     Model: "m",
