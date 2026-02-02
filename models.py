@@ -39,6 +39,18 @@ def get_user_context():
         raise ImproperlyConfigured(msg)
 
 
+class SanitizedCharField(models.CharField):
+    """
+    A CharField that sanitizes input by replacing null characters.
+    """
+
+    def get_prep_value(self, value):
+        value = super().get_prep_value(value)
+        if value is not None:
+            value = value.replace('\x00', '')
+        return value
+
+
 class SoftDeletableModel(models.Model):
     """An abstract base class that provides soft-deletable Models."""
 
@@ -831,8 +843,10 @@ class ValidationRequest(AuditedBaseModel, SoftDeletableModel, IdObfuscator):
         help_text="Current status of the Validation Request.",
     )
 
-    status_reason = models.TextField(
-        null=True, blank=True, help_text="Reason for current status."
+    status_reason = SanitizedCharField(
+        null=True, 
+        blank=True, 
+        help_text="Reason for current status."
     )
 
     started = models.DateTimeField(
@@ -1026,7 +1040,7 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         help_text="Current status of the Validation Task.",
     )
 
-    status_reason = models.TextField(
+    status_reason = SanitizedCharField(
         null=True,
         blank=True,
         help_text="Reason for current status."
