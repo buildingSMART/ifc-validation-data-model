@@ -1,10 +1,13 @@
+from dataclasses import dataclass
 from enum import Enum
+import functools
+import operator
 import os
 import threading
 
 from django.db import models
-from django.db.models import Q, QuerySet
-from django.db.models.functions import Lower
+from django.db.models import Q, QuerySet, TextField, Case, When, Value, IntegerField, CharField, Max
+from django.db.models.functions import Cast, Coalesce
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.utils import timezone
@@ -544,6 +547,28 @@ class Model(TimestampedBaseModel, IdObfuscator):
         help_text="Schema of the Model."
     )
 
+    @functools.cached_property
+    def _latest_task_status_by_type(self) -> dict[str, str]:
+        """
+        Returns {task_type: aggregate_status} using only the latest task per type
+        for this model's request.
+        """
+        if not getattr(self, "request", None):
+            return {}
+
+        # Postgres: DISTINCT ON(type) picks the first row per type
+        rows = (
+            self.request.tasks
+            .with_aggregate_status()                 # <-- your existing DB aggregate (+ whitelist)
+            .order_by("-created", "-id")            # created from TimestampedBaseModel
+            .values_list("type", "aggregate_status")
+        )
+        print(rows)
+        return dict(rows)
+
+    def _status_for(self, task_type) -> str:
+        return self._latest_task_status_by_type.get(task_type, Model.Status.NOT_VALIDATED)
+
     status_bsdd = models.CharField(
         max_length=1,
         choices=Status.choices,
@@ -603,6 +628,10 @@ class Model(TimestampedBaseModel, IdObfuscator):
         blank=False,
         help_text="Status of the Schema Validation.",
     )
+
+    @property
+    def status_schema_calculated(self):
+        return self._status_for(ValidationTask.Type.SCHEMA)
 
     status_syntax = models.CharField(
         max_length=1,
@@ -958,8 +987,69 @@ class ValidationRequest(AuditedBaseModel, SoftDeletableModel, IdObfuscator):
         self.ended = None
         self.save()
 
+class ValidationTaskQuerySet(models.QuerySet):
+    def with_aggregate_status(self, include_whitelist: bool = True):
+        wl_annotations = {}
+        wl_q = Q(**{"outcomes__pk__in": []})  # always false
+
+        if include_whitelist:
+            whitelist_entries = WhiteListEntry.objects.all()
+            if whitelist_entries:
+                query = functools.reduce(operator.or_, map(lambda wle: wle.build("outcomes__"), whitelist_entries))
+                wl_annotations, wl_q = query.annotations, query.q
+
+        # mirror your "only check whitelist for >= WARNING"
+        wl_cond = (
+            Q(outcomes__severity_in_db__gte=ValidationOutcome.OutcomeSeverity.WARNING)
+            & wl_q
+        )
+
+        severity_rank = Case(
+            # non-whitelisted ERROR/WARNING are "bad"
+            When(
+                Q(outcomes__severity_in_db=ValidationOutcome.OutcomeSeverity.ERROR) & ~wl_cond,
+                then=Value(3),
+            ),
+            When(
+                Q(outcomes__severity_in_db=ValidationOutcome.OutcomeSeverity.WARNING) & ~wl_cond,
+                then=Value(2),
+            ),
+
+            # whitelisted WARNING/ERROR become "valid"
+            When(wl_cond, then=Value(1)),
+
+            # normal "good" severities
+            When(
+                outcomes__severity_in_db__in=[
+                    ValidationOutcome.OutcomeSeverity.EXECUTED,
+                    ValidationOutcome.OutcomeSeverity.PASSED,
+                ],
+                then=Value(1),
+            ),
+            When(outcomes__severity_in_db=ValidationOutcome.OutcomeSeverity.NOT_APPLICABLE, then=Value(0)),
+            default=Value(-1),
+            output_field=IntegerField(),
+        )
+
+        return (
+            self.annotate(**wl_annotations)
+            .annotate(_agg_rank=Coalesce(Max(severity_rank), Value(1)))  # no outcomes => VALID
+            .annotate(
+                aggregate_status=Case(
+                    When(_agg_rank=3, then=Value(Model.Status.INVALID)),
+                    When(_agg_rank=2, then=Value(Model.Status.WARNING)),
+                    When(_agg_rank=1, then=Value(Model.Status.VALID)),
+                    When(_agg_rank=0, then=Value(Model.Status.NOT_APPLICABLE)),
+                    default=Value(Model.Status.VALID),
+                    output_field=CharField(),
+                )
+            )
+        )
+
 
 class ValidationTask(TimestampedBaseModel, IdObfuscator):
+    objects = ValidationTaskQuerySet.as_manager()
+
     """
     A model to store and track Validation Tasks.
     """
@@ -982,7 +1072,6 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         INDUSTRY_PRACTICES  = 'INDUSTRY', 'Industry Practices'
         INSTANCE_COMPLETION = 'INST_COMPLETION', 'Instance Completion'
         DIGITAL_SIGNATURES  = 'DIGITAL_SIGNATURES', 'Digital Signatures'
-        WHITELISTING        = 'WHITELISTING', 'Whitelisting'
 
     class Status(models.TextChoices):
         """
@@ -1141,6 +1230,7 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         self.process_cmd = cmd
         self.save()
 
+    '''
     def determine_aggregate_status(self):
         """
         Aggregates Severity of all Outcomes into one final Status value.
@@ -1174,7 +1264,7 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
             agg_status = Model.Status.VALID
 
         return agg_status
-
+    '''
 
 class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
     """
@@ -1190,6 +1280,17 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
         WARNING                = 3, 'Warning'
         ERROR                  = 4, 'Error'
         NOT_APPLICABLE         = 0, 'N/A'
+
+    @functools.cached_property
+    def is_whitelisted(self):
+        if self.severity_in_db < ValidationOutcome.OutcomeSeverity.WARNING:
+            # never check for lower than warning, because potentially expensive query
+            return False
+        whitelist_entries = WhiteListEntry.objects.all()
+        if not whitelist_entries:
+            return False
+        query = functools.reduce(operator.or_, map(lambda wle: wle.build(), whitelist_entries))
+        return query.apply(ValidationOutcome.objects.filter(pk=self.id)).exists()
 
     class ValidationOutcomeCode(models.TextChoices):
         """
@@ -1265,14 +1366,24 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
         help_text="Version number of the Gherkin Feature (optional).",
     )
 
-    severity = models.PositiveSmallIntegerField(
+    severity_in_db = models.PositiveSmallIntegerField(
         choices=OutcomeSeverity.choices,
         default=OutcomeSeverity.NOT_APPLICABLE,
         db_index=True,
         null=False,
         blank=False,
         help_text="Severity of the Validation Outcome.",
+        db_column="severity"
     )
+
+    @property
+    def severity(self):
+        return ValidationOutcome.OutcomeSeverity.PASSED if self.is_whitelisted else self.severity_in_db
+
+    @severity.setter
+    def severity(self, value):
+        self.severity_in_db = value
+        return self.severity_in_db
 
     outcome_code = models.CharField(
         max_length=10,
@@ -1299,7 +1410,7 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
         verbose_name_plural = "Validation Outcomes"
         indexes = [
             models.Index(fields=["feature", "feature_version"]),
-            models.Index(fields=["feature", "feature_version", "severity"]),
+            models.Index(fields=["feature", "feature_version", "severity_in_db"]),
         ]
 
     def __str__(self):
@@ -1408,8 +1519,19 @@ class Version(TimestampedBaseModel):
 
         return f"{self.name}"
 
-from django.db.models.functions import Cast
-from django.db.models import TextField
+@dataclass
+class WhiteListEntryQueryBlock:
+    q : Q
+    annotations : dict
+
+    def __or__(self, other : 'WhiteListEntryQueryBlock'):
+        return WhiteListEntryQueryBlock(self.q | other.q, self.annotations | other.annotations)
+
+    def apply(self, outcomes_query_set : QuerySet):
+        if self.annotations:
+            outcomes_query_set = outcomes_query_set.annotate(**self.annotations)
+
+        return outcomes_query_set.filter(self.q)
 
 class WhiteListEntry(AuditedBaseModel):
     id = models.AutoField(
@@ -1424,18 +1546,18 @@ class WhiteListEntry(AuditedBaseModel):
     def __str__(self):
         return f"#{self.id}: {self.description}: {' | '.join(map(str, self.fragments.all()))}"
 
-    def apply(self, outcomes_query_set : QuerySet):
+    def build(self, prefix=""):
         q = Q()
 
         annotations = {}
         def ensure_text_cast(path: str) -> str:
-            key = f"_wl_text__{path}"
+            key = f"_wl_text__{path.replace('__', '_')}"
             if key not in annotations:
                 annotations[key] = Cast(path, TextField())
             return key
 
         for f in self.fragments.all():
-            col = f.column
+            col = prefix + f.column
             op = f.operation
             rhs = (f.right_hand_side or "").strip()
             kind = f.column_kind
@@ -1451,10 +1573,8 @@ class WhiteListEntry(AuditedBaseModel):
             elif op == WhiteListQueryFragment.Operation.CONTAINS:
                 q &= Q(**{f"{col}__icontains": rhs})
 
-        if annotations:
-            outcomes_query_set = outcomes_query_set.annotate(**annotations)
-
-        return outcomes_query_set.filter(q)
+        return WhiteListEntryQueryBlock(q, annotations)
+        
 
 class WhiteListQueryFragment(models.Model):
     class ColumnKind(Enum):
