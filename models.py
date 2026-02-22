@@ -556,14 +556,12 @@ class Model(TimestampedBaseModel, IdObfuscator):
         if not getattr(self, "request", None):
             return {}
 
-        # Postgres: DISTINCT ON(type) picks the first row per type
         rows = (
             self.request.tasks
-            .with_aggregate_status()                 # <-- your existing DB aggregate (+ whitelist)
-            .order_by("-created", "-id")            # created from TimestampedBaseModel
+            .with_aggregate_status()
+            .order_by("-created", "-id")
             .values_list("type", "aggregate_status")
         )
-        print(rows)
         return dict(rows)
 
     def _status_for(self, task_type) -> str:
@@ -589,6 +587,10 @@ class Model(TimestampedBaseModel, IdObfuscator):
         help_text="Status of the IA Validation.",
     )
 
+    @property
+    def status_ia_calculated(self):
+        return self._status_for(ValidationTask.Type.NORMATIVE_IA)
+
     status_ip = models.CharField(
         max_length=1,
         choices=Status.choices,
@@ -598,6 +600,10 @@ class Model(TimestampedBaseModel, IdObfuscator):
         blank=False,
         help_text="Status of the IP Validation.",
     )
+
+    @property
+    def status_ip_calculated(self):
+        return self._status_for(ValidationTask.Type.NORMATIVE_IP)
 
     status_ids = models.CharField(
         max_length=1,
@@ -642,6 +648,8 @@ class Model(TimestampedBaseModel, IdObfuscator):
         blank=False,
         help_text="Status of the Syntax Validation.",
     )
+
+    # @nb syntax is never white-listed
 
     status_magic_clamav = models.CharField(
         max_length=1,
@@ -1531,6 +1539,22 @@ class WhiteListEntryQueryBlock:
 
         return outcomes_query_set.filter(self.q)
 
+
+@dataclass(frozen=True)
+class FragSnap:
+    id: int
+    column: str
+    operation: str
+    right_hand_side: str
+
+
+@dataclass(frozen=True)
+class EntrySnap:
+    id: int
+    description: str
+    fragments: list[FragSnap]
+
+
 class WhiteListEntry(AuditedBaseModel):
     id = models.AutoField(
         primary_key=True, help_text="Identifier of the Whitelist Entry (auto-generated)."
@@ -1540,6 +1564,26 @@ class WhiteListEntry(AuditedBaseModel):
         max_length=255,
         blank=True,
     )
+
+    @staticmethod
+    def get_all():
+        snaps: list[EntrySnap] = []
+        suffix = ""
+        for e in WhiteListEntry.objects.prefetch_related("fragments").order_by("id").iterator(chunk_size=16):
+            frags = [
+                FragSnap(
+                    id=f.id,
+                    column=f.column,
+                    operation=f.operation,
+                    right_hand_side=f.right_hand_side,
+                )
+                for f in e.fragments.all().order_by("id")
+            ]
+            if suffix:
+                suffix += "_"
+            suffix += e.description.lower().replace(' ', '_')
+            snaps.append(EntrySnap(id=e.id, description=e.description, fragments=frags))
+        return snaps
 
     def __str__(self):
         return f"#{self.id}: {self.description}: {' | '.join(map(str, self.fragments.all()))}"
