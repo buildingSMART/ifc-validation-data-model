@@ -1230,7 +1230,6 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
         self.process_cmd = cmd
         self.save()
 
-    '''
     def determine_aggregate_status(self):
         """
         Aggregates Severity of all Outcomes into one final Status value.
@@ -1264,7 +1263,6 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
             agg_status = Model.Status.VALID
 
         return agg_status
-    '''
 
 class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
     """
