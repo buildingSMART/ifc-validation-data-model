@@ -1591,6 +1591,7 @@ class WhiteListQueryFragment(models.Model):
         EXPECTED = 'expected', 'Expected'
         OBSERVED = 'observed', 'Observed'
         MODEL_SCHEMA = 'validation_task__request__model__schema', 'Model schema'
+        INSTANCE_FIELDS = 'instance__fields', 'Instance fields'
 
     class Operation(models.TextChoices):
         EQUALS = 'EQUALS', 'Equals'
@@ -1629,6 +1630,7 @@ class WhiteListQueryFragment(models.Model):
         OutcomeColumn.OBSERVED: ColumnKind.JSON,
         OutcomeColumn.FEATURE_VERSION: ColumnKind.INT,
         OutcomeColumn.INSTANCE_TYPE: ColumnKind.TEXT,
+        OutcomeColumn.INSTANCE_FIELDS: ColumnKind.JSON,
         OutcomeColumn.TASK_TYPE: ColumnKind.TEXT,
         OutcomeColumn.FEATURE: ColumnKind.TEXT,
         OutcomeColumn.MODEL_SCHEMA: ColumnKind.TEXT,
