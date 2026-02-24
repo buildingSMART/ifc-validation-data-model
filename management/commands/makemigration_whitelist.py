@@ -92,7 +92,7 @@ class Command(BaseCommand):
             raise CommandError(f"Missing migrations dir: {migrations_dir}")
 
         number, dependency = self._latest_migration_name(migrations_dir)
-        filename = f"{number + 1:04d}_{suffix}.py"
+        filename = f"{number + 1:04d}_allowlist.py"
         out_path = migrations_dir / filename
 
         content = MIGRATION_TEMPLATE.format(
