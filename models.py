@@ -981,6 +981,7 @@ class ValidationRequest(AuditedBaseModel, SoftDeletableModel, IdObfuscator):
 
         self.file = None
         self.file_removed = timezone.now()
+        self.save(update_fields=['file', 'file_removed'])
                     
 
 
