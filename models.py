@@ -822,6 +822,12 @@ class ValidationRequest(AuditedBaseModel, SoftDeletableModel, IdObfuscator):
         help_text="Name of the file.",
     )
 
+    file_removed = models.DateTimeField(
+        null=True,
+        db_index=True,
+        help_text="Timestamp the file was removed.",
+    )
+
     file = models.FileField(
         null=False,
         max_length=2048,
@@ -970,6 +976,13 @@ class ValidationRequest(AuditedBaseModel, SoftDeletableModel, IdObfuscator):
         self.started = None
         self.ended = None
         self.save()
+
+    def remove_file(self):
+
+        self.file = None
+        self.file_removed = timezone.now()
+        self.save(update_fields=['file', 'file_removed'])
+                    
 
 
 class ValidationTask(TimestampedBaseModel, IdObfuscator):
