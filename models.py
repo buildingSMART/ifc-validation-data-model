@@ -1,11 +1,15 @@
+from dataclasses import dataclass
+from enum import Enum
+import functools
+import operator
 import os
 import threading
 
 from django.db import models
-from django.db.models import Q
-from django.db.models.functions import Lower
+from django.db.models import Q, QuerySet, TextField, Case, When, Value, IntegerField, CharField, Max
+from django.db.models.functions import Cast, Coalesce
 from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.utils import timezone
 from django.contrib.auth.models import User
 
@@ -555,6 +559,26 @@ class Model(TimestampedBaseModel, IdObfuscator):
         help_text="Schema of the Model."
     )
 
+    @functools.cached_property
+    def _latest_task_status_by_type(self) -> dict[str, str]:
+        """
+        Returns {task_type: aggregate_status} using only the latest task per type
+        for this model's request.
+        """
+        if not getattr(self, "request", None):
+            return {}
+
+        rows = (
+            self.request.tasks
+            .with_aggregate_status()
+            .order_by("-created", "-id")
+            .values_list("type", "aggregate_status")
+        )
+        return dict(rows)
+
+    def _status_for(self, task_type) -> str:
+        return self._latest_task_status_by_type.get(task_type, Model.Status.NOT_VALIDATED)
+
     status_bsdd = models.CharField(
         max_length=1,
         choices=Status.choices,
@@ -575,6 +599,10 @@ class Model(TimestampedBaseModel, IdObfuscator):
         help_text="Status of the IA Validation.",
     )
 
+    @property
+    def status_ia_calculated(self):
+        return self._status_for(ValidationTask.Type.NORMATIVE_IA)
+
     status_ip = models.CharField(
         max_length=1,
         choices=Status.choices,
@@ -584,6 +612,10 @@ class Model(TimestampedBaseModel, IdObfuscator):
         blank=False,
         help_text="Status of the IP Validation.",
     )
+
+    @property
+    def status_ip_calculated(self):
+        return self._status_for(ValidationTask.Type.NORMATIVE_IP)
 
     status_ids = models.CharField(
         max_length=1,
@@ -615,6 +647,10 @@ class Model(TimestampedBaseModel, IdObfuscator):
         help_text="Status of the Schema Validation.",
     )
 
+    @property
+    def status_schema_calculated(self):
+        return self._status_for(ValidationTask.Type.SCHEMA)
+
     status_syntax = models.CharField(
         max_length=1,
         choices=Status.choices,
@@ -624,6 +660,8 @@ class Model(TimestampedBaseModel, IdObfuscator):
         blank=False,
         help_text="Status of the Syntax Validation.",
     )
+
+    # @nb syntax is never white-listed
 
     status_magic_clamav = models.CharField(
         max_length=1,
@@ -982,10 +1020,71 @@ class ValidationRequest(AuditedBaseModel, SoftDeletableModel, IdObfuscator):
         self.file = None
         self.file_removed = timezone.now()
         self.save(update_fields=['file', 'file_removed'])
-                    
+
+
+class ValidationTaskQuerySet(models.QuerySet):
+    def with_aggregate_status(self, include_whitelist: bool = True):
+        wl_annotations = {}
+        wl_q = Q(**{"outcomes__pk__in": []})  # always false
+
+        if include_whitelist:
+            whitelist_entries = WhiteListEntry.objects.all()
+            if whitelist_entries:
+                query = functools.reduce(operator.or_, map(lambda wle: wle.build("outcomes__"), whitelist_entries))
+                wl_annotations, wl_q = query.annotations, query.q
+
+        # mirror your "only check whitelist for >= WARNING"
+        wl_cond = (
+            Q(outcomes__severity_in_db__gte=ValidationOutcome.OutcomeSeverity.WARNING)
+            & wl_q
+        )
+
+        severity_rank = Case(
+            # non-whitelisted ERROR/WARNING are "bad"
+            When(
+                Q(outcomes__severity_in_db=ValidationOutcome.OutcomeSeverity.ERROR) & ~wl_cond,
+                then=Value(3),
+            ),
+            When(
+                Q(outcomes__severity_in_db=ValidationOutcome.OutcomeSeverity.WARNING) & ~wl_cond,
+                then=Value(2),
+            ),
+
+            # whitelisted WARNING/ERROR become "valid"
+            When(wl_cond, then=Value(1)),
+
+            # normal "good" severities
+            When(
+                outcomes__severity_in_db__in=[
+                    ValidationOutcome.OutcomeSeverity.EXECUTED,
+                    ValidationOutcome.OutcomeSeverity.PASSED,
+                ],
+                then=Value(1),
+            ),
+            When(outcomes__severity_in_db=ValidationOutcome.OutcomeSeverity.NOT_APPLICABLE, then=Value(0)),
+            default=Value(-1),
+            output_field=IntegerField(),
+        )
+
+        return (
+            self.annotate(**wl_annotations)
+            .annotate(_agg_rank=Coalesce(Max(severity_rank), Value(1)))  # no outcomes => VALID
+            .annotate(
+                aggregate_status=Case(
+                    When(_agg_rank=3, then=Value(Model.Status.INVALID)),
+                    When(_agg_rank=2, then=Value(Model.Status.WARNING)),
+                    When(_agg_rank=1, then=Value(Model.Status.VALID)),
+                    When(_agg_rank=0, then=Value(Model.Status.NOT_APPLICABLE)),
+                    default=Value(Model.Status.VALID),
+                    output_field=CharField(),
+                )
+            )
+        )
 
 
 class ValidationTask(TimestampedBaseModel, IdObfuscator):
+    objects = ValidationTaskQuerySet.as_manager()
+
     """
     A model to store and track Validation Tasks.
     """
@@ -1200,7 +1299,6 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
 
         return agg_status
 
-
 class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
     """
     A model to store and track Validation Outcome instances.
@@ -1215,6 +1313,17 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
         WARNING                = 3, 'Warning'
         ERROR                  = 4, 'Error'
         NOT_APPLICABLE         = 0, 'N/A'
+
+    @functools.cached_property
+    def is_whitelisted(self):
+        if self.severity_in_db < ValidationOutcome.OutcomeSeverity.WARNING:
+            # never check for lower than warning, because potentially expensive query
+            return False
+        whitelist_entries = WhiteListEntry.objects.all()
+        if not whitelist_entries:
+            return False
+        query = functools.reduce(operator.or_, map(lambda wle: wle.build(), whitelist_entries))
+        return query.apply(ValidationOutcome.objects.filter(pk=self.id)).exists()
 
     class ValidationOutcomeCode(models.TextChoices):
         """
@@ -1290,14 +1399,24 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
         help_text="Version number of the Gherkin Feature (optional).",
     )
 
-    severity = models.PositiveSmallIntegerField(
+    severity_in_db = models.PositiveSmallIntegerField(
         choices=OutcomeSeverity.choices,
         default=OutcomeSeverity.NOT_APPLICABLE,
         db_index=True,
         null=False,
         blank=False,
         help_text="Severity of the Validation Outcome.",
+        db_column="severity"
     )
+
+    @property
+    def severity(self):
+        return ValidationOutcome.OutcomeSeverity.PASSED if self.is_whitelisted else self.severity_in_db
+
+    @severity.setter
+    def severity(self, value):
+        self.severity_in_db = value
+        return self.severity_in_db
 
     outcome_code = models.CharField(
         max_length=10,
@@ -1324,7 +1443,7 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
         verbose_name_plural = "Validation Outcomes"
         indexes = [
             models.Index(fields=["feature", "feature_version"]),
-            models.Index(fields=["feature", "feature_version", "severity"]),
+            models.Index(fields=["feature", "feature_version", "severity_in_db"]),
         ]
 
     def __str__(self):
@@ -1433,6 +1552,188 @@ class Version(TimestampedBaseModel):
 
         return f"{self.name}"
 
+@dataclass
+class WhiteListEntryQueryBlock:
+    q : Q
+    annotations : dict
+
+    def __or__(self, other : 'WhiteListEntryQueryBlock'):
+        return WhiteListEntryQueryBlock(self.q | other.q, self.annotations | other.annotations)
+
+    def apply(self, outcomes_query_set : QuerySet):
+        if self.annotations:
+            outcomes_query_set = outcomes_query_set.annotate(**self.annotations)
+
+        return outcomes_query_set.filter(self.q)
+
+
+@dataclass(frozen=True)
+class FragSnap:
+    id: int
+    column: str
+    operation: str
+    right_hand_side: str
+
+
+@dataclass(frozen=True)
+class EntrySnap:
+    id: int
+    description: str
+    fragments: list[FragSnap]
+
+
+class WhiteListEntry(AuditedBaseModel):
+    id = models.AutoField(
+        primary_key=True, help_text="Identifier of the Whitelist Entry (auto-generated)."
+    )
+
+    description = models.CharField(
+        max_length=255,
+        blank=True,
+    )
+
+    @staticmethod
+    def get_all():
+        snaps: list[EntrySnap] = []
+        suffix = ""
+        for e in WhiteListEntry.objects.prefetch_related("fragments").order_by("id").iterator(chunk_size=16):
+            frags = [
+                FragSnap(
+                    id=f.id,
+                    column=f.column,
+                    operation=f.operation,
+                    right_hand_side=f.right_hand_side,
+                )
+                for f in e.fragments.all().order_by("id")
+            ]
+            if suffix:
+                suffix += "_"
+            suffix += e.description.lower().replace(' ', '_')
+            snaps.append(EntrySnap(id=e.id, description=e.description, fragments=frags))
+        return snaps
+
+    def __str__(self):
+        return f"#{self.id}: {self.description}: {' | '.join(map(str, self.fragments.all()))}"
+
+    def build(self, prefix=""):
+        q = Q()
+
+        annotations = {}
+        def ensure_text_cast(path: str) -> str:
+            key = f"_wl_text__{path.replace('__', '_')}"
+            if key not in annotations:
+                annotations[key] = Cast(path, TextField())
+            return key
+
+        for f in self.fragments.all():
+            col = prefix + f.column
+            op = f.operation
+            rhs = (f.right_hand_side or "").strip()
+            kind = f.column_kind
+
+            if kind == WhiteListQueryFragment.ColumnKind.INT:
+                rhs_int = int(rhs)
+                q &= Q(**{col: rhs_int})
+            elif kind == WhiteListQueryFragment.ColumnKind.JSON:
+                ann = ensure_text_cast(col)
+                q &= Q(**{f"{ann}__icontains": rhs})
+            elif op == WhiteListQueryFragment.Operation.EQUALS:
+                q &= Q(**{f"{col}__iexact": rhs})
+            elif op == WhiteListQueryFragment.Operation.CONTAINS:
+                q &= Q(**{f"{col}__icontains": rhs})
+
+        return WhiteListEntryQueryBlock(q, annotations)
+        
+
+class WhiteListQueryFragment(models.Model):
+    class ColumnKind(Enum):
+        TEXT = "text"
+        INT  = "int"
+        JSON = "json"
+
+    class OutcomeColumn(models.TextChoices):
+        """
+        Outcome column to query
+        """
+        INSTANCE_TYPE = 'instance__ifc_type', 'Instance type'
+        TASK_TYPE = 'validation_task__type', 'Task type'
+        FEATURE = 'feature', 'Feature'
+        FEATURE_VERSION = 'feature_version', 'Feature version'
+        EXPECTED = 'expected', 'Expected'
+        OBSERVED = 'observed', 'Observed'
+        MODEL_SCHEMA = 'validation_task__request__model__schema', 'Model schema'
+        INSTANCE_FIELDS = 'instance__fields', 'Instance fields'
+
+    class Operation(models.TextChoices):
+        EQUALS = 'EQUALS', 'Equals'
+        CONTAINS = 'CONTAINS', 'Contains'
+
+    id = models.AutoField(
+        primary_key=True, help_text="Identifier of the Query Fragment (auto-generated)."
+    )
+
+    column = models.CharField(
+        max_length=39,
+        choices=OutcomeColumn.choices,
+        help_text="Outcome column this query fragment is bound to",
+    )
+
+    operation = models.CharField(
+        max_length=8,
+        choices=Operation.choices,
+        help_text="Predicate this query fragment is based on to",
+    )
+
+    right_hand_side = models.TextField(
+        max_length=255,
+        help_text="Right hand side of the query fragment",
+    )
+
+    whitelist_entry = models.ForeignKey(
+        WhiteListEntry,
+        related_name="fragments",
+        on_delete=models.CASCADE,
+        help_text="What Whitelist Entry this fragment is part of",
+    )
+
+    _KIND_BY_COLUMN = {
+        OutcomeColumn.EXPECTED: ColumnKind.JSON,
+        OutcomeColumn.OBSERVED: ColumnKind.JSON,
+        OutcomeColumn.FEATURE_VERSION: ColumnKind.INT,
+        OutcomeColumn.INSTANCE_TYPE: ColumnKind.TEXT,
+        OutcomeColumn.INSTANCE_FIELDS: ColumnKind.JSON,
+        OutcomeColumn.TASK_TYPE: ColumnKind.TEXT,
+        OutcomeColumn.FEATURE: ColumnKind.TEXT,
+        OutcomeColumn.MODEL_SCHEMA: ColumnKind.TEXT,
+    }
+
+    def __str__(self):
+        return f"({self.column} {self.operation} {self.right_hand_side})"
+
+    @property
+    def column_kind(self) -> ColumnKind:
+        try:
+            return self._KIND_BY_COLUMN[self.column]
+        except KeyError:
+            return WhiteListQueryFragment.ColumnKind.TEXT
+
+    def clean(self):
+        rhs = (self.right_hand_side or "").strip()
+        if rhs == "":
+            raise ValidationError({"right_hand_side": "Right-hand side cannot be empty."})
+
+        if self.column_kind == WhiteListQueryFragment.ColumnKind.INT:
+            try:
+                int(rhs)
+            except (TypeError, ValueError):
+                raise ValidationError({"right_hand_side": f"RHS must be an integer for column '{self.column}'."})
+        
+        if self.operation == WhiteListQueryFragment.Operation.EQUALS:
+            if self.column_kind == WhiteListQueryFragment.ColumnKind.JSON:
+                raise ValidationError({"operation": f"Equals is not supported for JSON column type on column '{self.column}'."})
+        else:
+            if self.column_kind == WhiteListQueryFragment.ColumnKind.INT:
+                raise ValidationError({"operation": f"Contains is not supported for INT column type on column '{self.column}'."})
 
 id_prefix_mapping = {
     Model: "m",
