@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('ifc_validation_models', '0023_ifc4_transformertype_typographic_error'),
+        ('ifc_validation_models', '0022_remove_validationoutcome_ifc_validat_feature_2540c6_idx_and_more_squashed_0023_alter_validationtask_type'),
     ]
 
     operations = [
