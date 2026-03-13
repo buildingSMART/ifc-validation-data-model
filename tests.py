@@ -10,7 +10,7 @@ from apps.ifc_validation_models.models import set_user_context
 class ValidationModelsTestCase(TestCase):
 
     def set_user_context():
-        user = User.objects.create(id=1, username='SYSTEM', is_active=True)
+        user, _ = User.objects.get_or_create(id=1, defaults={'username': 'SYSTEM', 'is_active': True})
         set_user_context(user)
 
     def test_created_request_has_status_pending(self):
