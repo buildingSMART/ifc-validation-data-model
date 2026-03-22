@@ -6,7 +6,7 @@ import os
 import threading
 
 from django.db import models
-from django.db.models import Q, QuerySet, TextField, Case, When, Value, IntegerField, CharField, Max
+from django.db.models import Q, F, QuerySet, TextField, Case, When, Value, IntegerField, CharField, Max
 from django.db.models.functions import Cast, Coalesce
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, ValidationError
@@ -571,7 +571,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
         rows = (
             self.request.tasks
             .with_aggregate_status()
-            .order_by("-created", "-id")
+            .order_by("created", "-id")
             .values_list("type", "aggregate_status")
         )
         return dict(rows)
@@ -1021,66 +1021,58 @@ class ValidationRequest(AuditedBaseModel, SoftDeletableModel, IdObfuscator):
         self.file_removed = timezone.now()
         self.save(update_fields=['file', 'file_removed'])
 
+def calculate_whitelist(include_whitelist, prefix = "", using=None):
+    wl_annotations = {}
+    wl_q = Q(**{f"{prefix}pk__in": []})  # always false
+
+    def use(x):
+        if using is None:
+            return x
+        else:
+            return x.using(using)
+
+    if include_whitelist:
+        whitelist_entries = use(WhiteListEntry.objects).all()
+        if whitelist_entries:
+            query = functools.reduce(operator.or_, map(lambda wle: wle.build(prefix), whitelist_entries))
+            wl_annotations, wl_q = query.annotations, query.q
+
+    severity_field = f"{prefix}severity_in_db"
+
+    wl_cond = (
+        Q(**{f"{severity_field}__gte":ValidationOutcome.OutcomeSeverity.WARNING})
+        & wl_q
+    )
+
+    effective_severity = Case(
+        When(
+            wl_cond,
+            then=Value(ValidationOutcome.OutcomeSeverity.PASSED),
+        ),
+        default=F(severity_field),
+        output_field=IntegerField(),
+    )
+
+    return wl_annotations, effective_severity
 
 class ValidationTaskQuerySet(models.QuerySet):
-    def with_aggregate_status(self, include_whitelist: bool = True):
-        wl_annotations = {}
-        wl_q = Q(**{"outcomes__pk__in": []})  # always false
-
-        if include_whitelist:
-            whitelist_entries = WhiteListEntry.objects.all()
-            if whitelist_entries:
-                query = functools.reduce(operator.or_, map(lambda wle: wle.build("outcomes__"), whitelist_entries))
-                wl_annotations, wl_q = query.annotations, query.q
-
-        # mirror your "only check whitelist for >= WARNING"
-        wl_cond = (
-            Q(outcomes__severity_in_db__gte=ValidationOutcome.OutcomeSeverity.WARNING)
-            & wl_q
-        )
-
-        severity_rank = Case(
-            # non-whitelisted ERROR/WARNING are "bad"
-            When(
-                Q(outcomes__severity_in_db=ValidationOutcome.OutcomeSeverity.ERROR) & ~wl_cond,
-                then=Value(3),
-            ),
-            When(
-                Q(outcomes__severity_in_db=ValidationOutcome.OutcomeSeverity.WARNING) & ~wl_cond,
-                then=Value(2),
-            ),
-
-            # whitelisted WARNING/ERROR become "valid"
-            When(wl_cond, then=Value(1)),
-
-            # normal "good" severities
-            When(
-                outcomes__severity_in_db__in=[
-                    ValidationOutcome.OutcomeSeverity.EXECUTED,
-                    ValidationOutcome.OutcomeSeverity.PASSED,
-                ],
-                then=Value(1),
-            ),
-            When(outcomes__severity_in_db=ValidationOutcome.OutcomeSeverity.NOT_APPLICABLE, then=Value(0)),
-            default=Value(-1),
-            output_field=IntegerField(),
-        )
+    def with_aggregate_status(self, include_whitelist: bool = True, using=None):
+        wl_annotations, effective_severity = calculate_whitelist(include_whitelist, prefix="outcomes__", using=using)
 
         return (
             self.annotate(**wl_annotations)
-            .annotate(_agg_rank=Coalesce(Max(severity_rank), Value(1)))  # no outcomes => VALID
+            .annotate(_agg_rank=Coalesce(Max(effective_severity), Value(1)))
             .annotate(
                 aggregate_status=Case(
-                    When(_agg_rank=3, then=Value(Model.Status.INVALID)),
-                    When(_agg_rank=2, then=Value(Model.Status.WARNING)),
-                    When(_agg_rank=1, then=Value(Model.Status.VALID)),
+                    When(_agg_rank=4, then=Value(Model.Status.INVALID)),
+                    When(_agg_rank=3, then=Value(Model.Status.WARNING)),
+                    When(_agg_rank=2, then=Value(Model.Status.VALID)),
                     When(_agg_rank=0, then=Value(Model.Status.NOT_APPLICABLE)),
                     default=Value(Model.Status.VALID),
                     output_field=CharField(),
                 )
             )
         )
-
 
 class ValidationTask(TimestampedBaseModel, IdObfuscator):
     objects = ValidationTaskQuerySet.as_manager()
@@ -1299,10 +1291,18 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
 
         return agg_status
 
+class ValidationOutcomeQuerySet(models.QuerySet):
+    def with_effective_severity(self, include_whitelist: bool = True, using=None):
+        wl_annotations, effective_severity = calculate_whitelist(include_whitelist, using=using)
+        return self.annotate(**wl_annotations).annotate(effective_severity=effective_severity)
+
+
 class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
     """
     A model to store and track Validation Outcome instances.
     """
+
+    objects = ValidationOutcomeQuerySet.as_manager()
 
     class OutcomeSeverity(models.IntegerChoices):
         """
