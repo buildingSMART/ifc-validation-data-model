@@ -1314,13 +1314,18 @@ class ValidationOutcome(TimestampedBaseModel, IdObfuscator):
         ERROR                  = 4, 'Error'
         NOT_APPLICABLE         = 0, 'N/A'
 
+    @functools.cache
+    @staticmethod
+    def get_whitelist_entries():
+        return WhiteListEntry.objects.all()
+
     @functools.cached_property
     def is_whitelisted(self):
         if self.severity_in_db < ValidationOutcome.OutcomeSeverity.WARNING:
             # never check for lower than warning, because potentially expensive query
             return False
-        whitelist_entries = WhiteListEntry.objects.all()
-        if not whitelist_entries:
+        whitelist_entries = ValidationOutcome.get_whitelist_entries()
+        if not whitelist_entries.exists():
             return False
         query = functools.reduce(operator.or_, map(lambda wle: wle.build(), whitelist_entries))
         return query.apply(ValidationOutcome.objects.filter(pk=self.id)).exists()
@@ -1592,11 +1597,15 @@ class WhiteListEntry(AuditedBaseModel):
         blank=True,
     )
 
+    @functools.cached_property
+    def cached_fragments(self):
+        return list(self.fragments.all().order_by("id"))
+
     @staticmethod
     def get_all():
         snaps: list[EntrySnap] = []
         suffix = ""
-        for e in WhiteListEntry.objects.prefetch_related("fragments").order_by("id").iterator(chunk_size=16):
+        for e in WhiteListEntry.objects.select_related("fragments").order_by("id").iterator(chunk_size=16):
             frags = [
                 FragSnap(
                     id=f.id,
@@ -1604,7 +1613,7 @@ class WhiteListEntry(AuditedBaseModel):
                     operation=f.operation,
                     right_hand_side=f.right_hand_side,
                 )
-                for f in e.fragments.all().order_by("id")
+                for f in e.cached_fragments()
             ]
             if suffix:
                 suffix += "_"
@@ -1612,8 +1621,14 @@ class WhiteListEntry(AuditedBaseModel):
             snaps.append(EntrySnap(id=e.id, description=e.description, fragments=frags))
         return snaps
 
+
+    class Meta:
+
+        verbose_name = "Whitelist Entry"
+        verbose_name_plural = "Whitelist Entries"
+
     def __str__(self):
-        return f"#{self.id}: {self.description}: {' | '.join(map(str, self.fragments.all()))}"
+        return f"#{self.id}: {self.description}: {' | '.join(map(str, self.cached_fragments))}"
 
     def build(self, prefix=""):
         q = Q()
@@ -1625,7 +1640,7 @@ class WhiteListEntry(AuditedBaseModel):
                 annotations[key] = Cast(path, TextField())
             return key
 
-        for f in self.fragments.all():
+        for f in self.cached_fragments:
             col = prefix + f.column
             op = f.operation
             rhs = (f.right_hand_side or "").strip()
