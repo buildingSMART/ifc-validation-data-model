@@ -5,6 +5,7 @@ from django.db.utils import IntegrityError
 from apps.ifc_validation_models.models import ValidationRequest, ValidationTask  # TODO: for now needs to be absolute!
 from apps.ifc_validation_models.models import Company, AuthoringTool, Model
 from apps.ifc_validation_models.models import UserAdditionalInfo
+from apps.ifc_validation_models.models import ValidationOutcome
 from apps.ifc_validation_models.models import set_user_context
 
 class ValidationModelsTestCase(TestCase):
@@ -476,3 +477,94 @@ class ValidationModelsTestCase(TestCase):
 
         # assert
         self.assertIsNone(result)
+
+
+class AggregateStatusTestCase(TestCase):
+    """A task / category with NO outcomes (skipped or never-run) must aggregate to
+    NOT_VALIDATED, not VALID — otherwise a skipped check shows a green checkmark.
+    Covers both the Python (determine_aggregate_status) and SQL (with_aggregate_status)
+    paths and the *_calculated properties the UI reads."""
+
+    S = ValidationOutcome.OutcomeSeverity
+    T = ValidationTask.Type
+    St = Model.Status
+
+    @staticmethod
+    def set_user_context():
+        user, _ = User.objects.get_or_create(id=1, defaults={'username': 'SYSTEM', 'is_active': True})
+        set_user_context(user)
+        return user
+
+    def _task_with(self, severities, type=None, request=None):
+        if request is None:
+            request = ValidationRequest.objects.create(file_name='a.ifc', file='a.ifc', size=0)
+            request.mark_as_initiated()
+        task = ValidationTask.objects.create(request=request, type=type or self.T.SCHEMA)
+        for sev in severities:
+            ValidationOutcome.objects.create(validation_task=task, severity=sev)
+        return task
+
+    def _model_with_task(self, ttype, severities):
+        user = self.set_user_context()
+        model = Model.objects.create(file_name='m.ifc', size=1, uploaded_by=user)
+        request = ValidationRequest.objects.create(file_name='m.ifc', file='m.ifc', size=1)
+        request.model = model
+        request.save()
+        self._task_with(severities, type=ttype, request=request)
+        return Model.objects.get(id=model.id)
+
+    # ---- Layer 1: determine_aggregate_status() (Python) ----
+    def test_determine_aggregate_status_no_outcomes_is_not_validated(self):
+        self.set_user_context()
+        self.assertEqual(self._task_with([]).determine_aggregate_status(), self.St.NOT_VALIDATED)
+
+    def test_determine_aggregate_status_executed_is_valid(self):
+        self.set_user_context()
+        self.assertEqual(self._task_with([self.S.EXECUTED, self.S.PASSED]).determine_aggregate_status(), self.St.VALID)
+
+    def test_determine_aggregate_status_error_is_invalid(self):
+        self.set_user_context()
+        self.assertEqual(self._task_with([self.S.PASSED, self.S.ERROR]).determine_aggregate_status(), self.St.INVALID)
+
+    def test_determine_aggregate_status_not_applicable_only(self):
+        self.set_user_context()
+        self.assertEqual(self._task_with([self.S.NOT_APPLICABLE]).determine_aggregate_status(), self.St.NOT_APPLICABLE)
+
+    # ---- Layer 1: with_aggregate_status() (SQL) ----
+    def test_with_aggregate_status_no_outcomes_is_not_validated(self):
+        self.set_user_context()
+        t = self._task_with([])
+        row = ValidationTask.objects.filter(id=t.id).with_aggregate_status().get()
+        self.assertEqual(row.aggregate_status, self.St.NOT_VALIDATED)
+
+    def test_with_aggregate_status_executed_is_valid(self):
+        self.set_user_context()
+        t = self._task_with([self.S.EXECUTED])
+        row = ValidationTask.objects.filter(id=t.id).with_aggregate_status().get()
+        self.assertEqual(row.aggregate_status, self.St.VALID)
+
+    def test_with_aggregate_status_error_is_invalid(self):
+        self.set_user_context()
+        t = self._task_with([self.S.PASSED, self.S.ERROR])
+        row = ValidationTask.objects.filter(id=t.id).with_aggregate_status().get()
+        self.assertEqual(row.aggregate_status, self.St.INVALID)
+
+    # ---- Layer 2: the *_calculated properties (the UI path) ----
+    def test_schema_calculated_skipped_is_not_validated(self):
+        self.assertEqual(self._model_with_task(self.T.SCHEMA, []).status_schema_calculated, self.St.NOT_VALIDATED)
+
+    def test_ia_calculated_skipped_is_not_validated(self):
+        self.assertEqual(self._model_with_task(self.T.NORMATIVE_IA, []).status_ia_calculated, self.St.NOT_VALIDATED)
+
+    def test_ip_calculated_skipped_is_not_validated(self):
+        self.assertEqual(self._model_with_task(self.T.NORMATIVE_IP, []).status_ip_calculated, self.St.NOT_VALIDATED)
+
+    def test_schema_calculated_passed_is_valid(self):
+        self.assertEqual(self._model_with_task(self.T.SCHEMA, [self.S.PASSED]).status_schema_calculated, self.St.VALID)
+
+    def test_schema_calculated_error_is_invalid(self):
+        self.assertEqual(self._model_with_task(self.T.SCHEMA, [self.S.PASSED, self.S.ERROR]).status_schema_calculated, self.St.INVALID)
+
+    def test_calculated_missing_task_type_is_not_validated(self):
+        # no SCHEMA task at all -> dict-miss default
+        self.assertEqual(self._model_with_task(self.T.NORMATIVE_IA, [self.S.PASSED]).status_schema_calculated, self.St.NOT_VALIDATED)
