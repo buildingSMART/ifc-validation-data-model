@@ -31,7 +31,7 @@ python3 manage.py createsuperuser --username SYSTEM
 Run this command to run tests against in-memory database.
 
 ```shell
-python3 manage.py test apps --settings apps.ifc_validation_models.test_settings --debug-mode --verbosity 3
+python3 manage.py test apps --settings apps.ifc_validation_models.test_settings --debug-mode --verbosity 3 
 ```
 
 ### Usage as a datamodel independent of django app
