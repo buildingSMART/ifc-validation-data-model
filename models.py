@@ -1061,13 +1061,16 @@ class ValidationTaskQuerySet(models.QuerySet):
 
         return (
             self.annotate(**wl_annotations)
-            .annotate(_agg_rank=Coalesce(Max(effective_severity), Value(1)))
+            # no outcomes -> Max is NULL -> sentinel -1 so a skipped task maps to
+            # NOT_VALIDATED instead of collapsing into EXECUTED (rank 1) = VALID.
+            .annotate(_agg_rank=Coalesce(Max(effective_severity), Value(-1)))
             .annotate(
                 aggregate_status=Case(
                     When(_agg_rank=4, then=Value(Model.Status.INVALID)),
                     When(_agg_rank=3, then=Value(Model.Status.WARNING)),
                     When(_agg_rank=2, then=Value(Model.Status.VALID)),
                     When(_agg_rank=0, then=Value(Model.Status.NOT_APPLICABLE)),
+                    When(_agg_rank=-1, then=Value(Model.Status.NOT_VALIDATED)),
                     default=Value(Model.Status.VALID),
                     output_field=CharField(),
                 )
@@ -1285,9 +1288,10 @@ class ValidationTask(TimestampedBaseModel, IdObfuscator):
                 agg_status = Model.Status.INVALID
                 break  # can't get any worse...
 
-        # assume valid if no outcomes - TODO: is this correct?
+        # no outcomes means the task did not run (e.g. skipped) -> not validated,
+        # not valid. Otherwise a skipped task shows a green checkmark.
         if agg_status is None:
-            agg_status = Model.Status.VALID
+            agg_status = Model.Status.NOT_VALIDATED
 
         return agg_status
 
