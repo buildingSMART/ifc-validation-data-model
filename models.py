@@ -147,19 +147,19 @@ class TimestampedBaseModel(models.Model):
 
 class IdObfuscator:
     @property
-    def public_id(self):
+    def public_id(self) -> str:
         return self.to_public_id(
             self.id
         )  # type(self).__name__[0].lower() + str(self.id * COPRIMESECRET % PRIMEMODULO)
 
     @classmethod
-    def to_public_id(cls, priv_id, override_cls=None):
+    def to_public_id(cls, priv_id, override_cls=None) -> str:
         return id_prefix_mapping[override_cls or cls] + str(
             priv_id * COPRIMESECRET % PRIMEMODULO
         )
 
     @staticmethod
-    def to_private_id(pub_id):
+    def to_private_id(pub_id) -> int:
         return int(pub_id[1:]) * INVERSE_COPRIME % PRIMEMODULO
 
 
