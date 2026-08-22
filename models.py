@@ -1,12 +1,15 @@
 from dataclasses import dataclass
 from enum import Enum
+import bisect
 import functools
 import operator
 import os
 import threading
 
+import ifcopenshell
+
 from django.db import models
-from django.db.models import Q, F, QuerySet, TextField, Case, When, Value, IntegerField, CharField, Max
+from django.db.models import Q, F, QuerySet, TextField, Case, When, Value, IntegerField, CharField, Max, Sum
 from django.db.models.functions import Cast, Coalesce
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, ValidationError
@@ -767,6 +770,272 @@ class Model(TimestampedBaseModel, IdObfuscator):
         self.status_prereq = Model.Status.NOT_VALIDATED
         self.status_header = Model.Status.NOT_VALIDATED
         self.save()
+
+    @functools.cached_property
+    def histogram(self):
+        return self.get_histogram(include_supertypes=True)
+
+    def get_histogram(self, include_supertypes=True):
+        entries = self.histogram_entries.filter(count__gt=0).exclude(
+            is_supertype__isnull=True,
+        )
+        if not include_supertypes:
+            entries = entries.filter(is_supertype=False)
+        entries = list(
+            entries
+            .values("entity_index")
+            .annotate(count=Sum("count"))
+        )
+        if not entries:
+            return {}
+        entity_names = EntityCountHistogram.entity_names(self.schema)
+        return {
+            entity_names[entry["entity_index"]]: entry["count"]
+            for entry in entries
+        }
+
+
+class EntityCountHistogram(models.Model):
+    COMPLETION_MARKER_COUNT = 0
+
+    model = models.ForeignKey(
+        to=Model,
+        on_delete=models.CASCADE,
+        related_name="histogram_entries",
+        null=False,
+        db_index=True,
+        help_text="Owning model of this histogram entry",
+    )
+
+    entity_index = models.PositiveIntegerField(
+        null=False,
+        help_text="Index into sorted entity names from the schema in model the associated model"
+    )
+
+    count = models.PositiveIntegerField(
+        null=False,
+        help_text="Size of the model (bytes)"
+    )
+
+    is_supertype = models.BooleanField(
+        null=True,
+        default=None,
+        db_index=True,
+        help_text="Whether this count comes from instances of subtypes",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["model", "entity_index", "is_supertype"],
+                name="unique_entity_histogram_entry",
+            ),
+        ]
+
+    @staticmethod
+    @functools.cache
+    def entity_names(schema_iden : str):
+        return tuple(sorted(
+            e.name() for e in ifcopenshell.schema_by_name(schema_iden).entities()
+        ))
+
+
+    @staticmethod
+    def index_from_string(schema_iden: str, v: str):
+        names = EntityCountHistogram.entity_names(schema_iden)
+        index = bisect.bisect_left(names, v)
+        if index == len(names) or names[index] != v:
+            raise ValueError(f"Unknown entity {v!r} in schema {schema_iden!r}")
+        return index
+
+    @staticmethod
+    def string_from_index(schema_iden: str, v: int):
+        return EntityCountHistogram.entity_names(schema_iden)[v]
+
+    @property
+    def entity_name(self):
+        if self.is_completion_marker:
+            return "Completion marker"
+        try:
+            return self.string_from_index(self.model.schema, self.entity_index)
+        except (IndexError, RuntimeError, TypeError):
+            return "Unknown entity"
+
+    @property
+    def is_completion_marker(self):
+        return self.count == self.COMPLETION_MARKER_COUNT
+
+    @classmethod
+    def completion_marker(cls, model):
+        return cls(
+            model=model,
+            entity_index=0,
+            count=cls.COMPLETION_MARKER_COUNT,
+            is_supertype=None,
+        )
+
+    def __str__(self):
+        if self.is_completion_marker:
+            return f"<model #{self.model_id} entity histogram completed>"
+        return (
+            f"<model #{self.model_id} has {self.count} instances of "
+            f"{self.entity_name} (i={self.entity_index})>"
+        )
+
+
+class PsetCountHistogram(models.Model):
+    COMPLETION_MARKER_COUNT = 0
+
+    model = models.ForeignKey(
+        to=Model,
+        on_delete=models.CASCADE,
+        related_name="pset_count_entries",
+        null=False,
+        db_index=True,
+        help_text="Owning model of this histogram entry",
+    )
+
+    entity_index = models.PositiveIntegerField(
+        null=True,
+        help_text="Index into sorted entity names from the schema of the associated model",
+    )
+
+    pset_name = models.CharField(
+        max_length=1024,
+        null=False,
+        blank=True,
+        help_text="Name of the property definition",
+    )
+
+    is_standardized = models.BooleanField(
+        null=False,
+        db_index=True,
+        help_text="Whether the property definition is standardized for the IFC schema",
+    )
+
+    count = models.PositiveIntegerField(
+        null=False,
+        help_text="Number of property definitions or related objects",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["model", "entity_index", "pset_name"],
+                name="unique_pset_histogram_entry",
+            ),
+        ]
+
+    @property
+    def entity_name(self):
+        if self.is_completion_marker:
+            return "Completion marker"
+        if self.entity_index is None:
+            return "Property definitions"
+        try:
+            return EntityCountHistogram.string_from_index(
+                self.model.schema,
+                self.entity_index,
+            )
+        except (IndexError, RuntimeError, TypeError):
+            return "Unknown entity"
+
+    @property
+    def is_completion_marker(self):
+        return self.count == self.COMPLETION_MARKER_COUNT
+
+    @classmethod
+    def completion_marker(cls, model):
+        return cls(
+            model=model,
+            entity_index=None,
+            pset_name="",
+            is_standardized=False,
+            count=cls.COMPLETION_MARKER_COUNT,
+        )
+
+    def __str__(self):
+        if self.is_completion_marker:
+            return f"<model #{self.model_id} property-set histogram completed>"
+        if self.entity_index:
+            return (
+                f"<model #{self.model_id} has {self.count} instances of"
+                f" a Property set with name \"{self.pset_name or '(unnamed)'}\""
+                f" associated to {self.entity_name} (i={self.entity_index})"
+                f">"
+            )
+        else:
+            return (
+                f"<model #{self.model_id} has {self.count} instances of"
+                f" a Property set with name \"{self.pset_name or '(unnamed)'}\""
+                f">"
+            )
+
+
+
+class TemplateStatistic(models.Model):
+    model = models.ForeignKey(
+        to=Model,
+        on_delete=models.CASCADE,
+        related_name="template_statistics",
+        null=False,
+        help_text="Model for which the template statistics were computed",
+    )
+
+    template_name = models.CharField(
+        max_length=255,
+        help_text="Markdown template filename",
+    )
+
+    focus_instance = models.ForeignKey(
+        to="ModelInstance",
+        on_delete=models.CASCADE,
+        related_name="template_statistics",
+        null=True,
+        help_text="Focus instance matched by the template",
+    )
+
+    graph = models.JSONField(
+        default=dict,
+        null=True,
+        blank=True,
+        help_text=(
+            "Bindings extracted from the template graph; null identifies a "
+            "completion marker for this template"
+        ),
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["model", "template_name"],
+                condition=Q(graph__isnull=True),
+                name="unique_template_statistic_completion_marker",
+            ),
+        ]
+
+    @property
+    def is_completion_marker(self):
+        return self.graph is None
+
+    @classmethod
+    def completion_marker(cls, model, template_name):
+        return cls(
+            model=model,
+            template_name=template_name,
+            graph=None,
+        )
+
+    def __str__(self):
+        if self.is_completion_marker:
+            return (
+                f"<model #{self.model_id} template {self.template_name} "
+                "statistics completed>"
+            )
+        return (
+            f"<model #{self.model_id} template {self.template_name} focused on "
+            f"#{self.focus_instance.stepfile_id} {self.focus_instance.ifc_type}>"
+        )
 
 
 class ModelInstance(TimestampedBaseModel, IdObfuscator):
