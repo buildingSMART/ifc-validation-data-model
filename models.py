@@ -6,8 +6,6 @@ import operator
 import os
 import threading
 
-import ifcopenshell
-
 from django.db import models
 from django.db.models import Q, F, QuerySet, TextField, Case, When, Value, IntegerField, CharField, Max, Sum
 from django.db.models.functions import Cast, Coalesce
@@ -835,6 +833,7 @@ class EntityCountHistogram(models.Model):
     @staticmethod
     @functools.cache
     def entity_names(schema_iden : str):
+        import ifcopenshell
         return tuple(sorted(
             e.name() for e in ifcopenshell.schema_by_name(schema_iden).entities()
         ))
