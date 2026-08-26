@@ -374,6 +374,21 @@ class AuthoringTool(TimestampedBaseModel):
         help_text="Alphanumeric version of the Authoring Tool (eg. '1.0-alpha').",
     )
 
+    canonical_name = models.CharField(
+        max_length=1024,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Language-neutral name of the Authoring Tool, eg. 'Revit 26.4.0.32' for 'Revit 26.4.0.32 (ENU)'. Equals name when no language package marker was recognized.",
+    )
+
+    language_code = models.CharField(
+        max_length=16,
+        null=True,
+        blank=True,
+        help_text="Normalized language code of the Authoring Tool's language package, eg. 'en' for '(ENU)' (optional).",
+    )
+
     class Meta:
 
         db_table = "ifc_authoring_tool"
