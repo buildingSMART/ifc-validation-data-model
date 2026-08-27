@@ -13,6 +13,7 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.utils import timezone
 from django.contrib.auth.models import User
+from .languages import split_language
 
 local = threading.local()
 
@@ -376,17 +377,17 @@ class AuthoringTool(TimestampedBaseModel):
 
     canonical_name = models.CharField(
         max_length=1024,
-        null=True,
-        blank=True,
+        null=False,
+        blank=False,
         db_index=True,
-        help_text="Language-neutral name of the Authoring Tool, eg. 'Revit 26.4.0.32' for 'Revit 26.4.0.32 (ENU)'. Equals name when no language package marker was recognized.",
+        help_text="Language-neutral name of the Authoring Tool, eg. 'Revit 26.4.0.32' for 'Revit 26.4.0.32 (ENU)'. Derived from name on save; equals name when no language package marker was recognized.",
     )
 
     language_code = models.CharField(
         max_length=16,
         null=True,
         blank=True,
-        help_text="Normalized language code of the Authoring Tool's language package, eg. 'en' for '(ENU)' (optional).",
+        help_text="Normalized language code of the Authoring Tool's language package, derived from name on save: ISO 639-1 where possible ('en' for '(ENU)'), with a script subtag where needed ('zh-hans'/'zh-hant'). NULL when no language package marker was recognized.",
     )
 
     class Meta:
@@ -412,6 +413,12 @@ class AuthoringTool(TimestampedBaseModel):
     def __str__(self):
 
         return f"{self.full_name}".strip()
+
+    def save(self, *args, **kwargs):
+
+        # canonical_name and language_code are derived from name; keep them in sync on every save
+        self.canonical_name, self.language_code = split_language(self.name)
+        super().save(*args, **kwargs)
 
     @property
     def full_name(self):

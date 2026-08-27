@@ -603,6 +603,11 @@ class SplitLanguageTestCase(TestCase):
             # language names taken from the buildingSMART translations repo
             ('Civil 3D 2024 - Swedish', 'Civil 3D 2024', 'sv'),
             ('Tool 2024 (Turkish)', 'Tool 2024', 'tr'),
+            # lowercase ISO 639-2/639-3 codes, single or bibliographic/terminology pair
+            ('Tool 2024 (fra)', 'Tool 2024', 'fr'),
+            ('Tool 2024 (fra/fre)', 'Tool 2024', 'fr'),
+            ('Tool 2024 (ger)', 'Tool 2024', 'de'),
+            ('Tool 2024 (zho)', 'Tool 2024', 'zh'),
             # Autodesk LCID as a standalone token in the middle of the name
             ('Autodesk Revit 2025.1 (JPN) - J tool for Revit IFC2X3 2025', 'Autodesk Revit 2025.1 - J tool for Revit IFC2X3 2025', 'ja'),
             ('Autodesk Revit 2025.1 (ENU) - J tool for Revit IFC2X3 2025', 'Autodesk Revit 2025.1 - J tool for Revit IFC2X3 2025', 'en'),
@@ -630,6 +635,9 @@ class SplitLanguageTestCase(TestCase):
             'SEMA (de) Holzbausoftware 24.4',   # ISO code in the middle stays end-anchored only
             'Tool (BETA) - plugin',
             'Revit 2025 (ENU)64-bit',           # no whitespace after the token
+            'Tool 2024 (dev)',                  # three lowercase letters that are not a language code
+            'Tool 2024 (pro)',
+            'Tool (fra) Suite',                 # lowercase ISO codes are end-only
             'English',                # bare language name, no product name left
             '(ENU)',
             'IfcOpenShell-0.7.11-d51fa2c5f',
@@ -681,12 +689,12 @@ class SplitLanguageTestCase(TestCase):
         company = Company.objects.create(name='Autodesk')
         marked = AuthoringTool.objects.create(company=company, name='Revit 26.4.0.32 (ESP)', version='26.4.0.32')
         plain = AuthoringTool.objects.create(company=company, name='Civil Designer 9.1', version='9.1')
-        stale = AuthoringTool.objects.create(
-            company=company, name='Revit 26.4.0.32 (ENU)', version='26.4.0.32',
-            canonical_name='Revit 26.4.0.32 (ENU)', language_code=None
-        )
+        stale = AuthoringTool.objects.create(company=company, name='Revit 26.4.0.32 (ENU)', version='26.4.0.32')
+        # simulate a row written before the allowlist knew this marker (bypasses save())
+        AuthoringTool.objects.filter(pk=stale.pk).update(canonical_name=stale.name, language_code=None)
 
-        self.assertEqual(backfill_authoring_tools(AuthoringTool), 3)
+        # marked and plain were derived on save() already; only stale changes
+        self.assertEqual(backfill_authoring_tools(AuthoringTool), 1)
 
         marked.refresh_from_db(); plain.refresh_from_db(); stale.refresh_from_db()
         self.assertEqual((marked.canonical_name, marked.language_code), ('Revit 26.4.0.32', 'es'))
@@ -695,3 +703,19 @@ class SplitLanguageTestCase(TestCase):
 
         # idempotent: a second run changes nothing
         self.assertEqual(backfill_authoring_tools(AuthoringTool), 0)
+
+    def test_authoring_tool_derives_language_fields_on_save(self):
+
+        ValidationModelsTestCase.set_user_context()
+
+        company = Company.objects.create(name='Autodesk')
+        tool = AuthoringTool.objects.create(company=company, name='Revit 26.4.0.32 (ENU)', version='26.4.0.32')
+        tool.refresh_from_db()
+        self.assertEqual((tool.canonical_name, tool.language_code), ('Revit 26.4.0.32', 'en'))
+
+        # renaming re-derives; an explicitly passed value never wins over the name
+        tool.name = 'Revit 26.4.0.32'
+        tool.canonical_name = 'something else'
+        tool.save()
+        tool.refresh_from_db()
+        self.assertEqual((tool.canonical_name, tool.language_code), ('Revit 26.4.0.32', None))

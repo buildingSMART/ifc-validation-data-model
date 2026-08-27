@@ -9,12 +9,6 @@ def backfill_language_fields(apps, schema_editor):
     backfill_authoring_tools(AuthoringTool)
 
 
-def clear_language_fields(apps, schema_editor):
-
-    AuthoringTool = apps.get_model("ifc_validation_models", "AuthoringTool")
-    AuthoringTool.objects.update(canonical_name=None, language_code=None)
-
-
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -29,22 +23,22 @@ class Migration(migrations.Migration):
             model_name="authoringtool",
             name="canonical_name",
             field=models.CharField(
-                blank=True,
                 db_index=True,
-                help_text="Language-neutral name of the Authoring Tool, eg. 'Revit 26.4.0.32' for 'Revit 26.4.0.32 (ENU)'. Equals name when no language package marker was recognized.",
+                default="",
+                help_text="Language-neutral name of the Authoring Tool, eg. 'Revit 26.4.0.32' for 'Revit 26.4.0.32 (ENU)'. Derived from name on save; equals name when no language package marker was recognized.",
                 max_length=1024,
-                null=True,
             ),
+            preserve_default=False,
         ),
         migrations.AddField(
             model_name="authoringtool",
             name="language_code",
             field=models.CharField(
                 blank=True,
-                help_text="Normalized language code of the Authoring Tool's language package, eg. 'en' for '(ENU)' (optional).",
+                help_text="Normalized language code of the Authoring Tool's language package, derived from name on save: ISO 639-1 where possible ('en' for '(ENU)'), with a script subtag where needed ('zh-hans'/'zh-hant'). NULL when no language package marker was recognized.",
                 max_length=16,
                 null=True,
             ),
         ),
-        migrations.RunPython(backfill_language_fields, clear_language_fields),
+        migrations.RunPython(backfill_language_fields, migrations.RunPython.noop),
     ]

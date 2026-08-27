@@ -11,6 +11,7 @@ results can be aggregated per (company, canonical_name, version).
 Recognised marker forms (see the allowlists below):
 - three-letter uppercase locale codes: '(ENU)', '(DEU)', '(JPN)', ...
 - two-letter lowercase ISO 639-1 codes: '(de)', '(fr)', ...
+- three-letter lowercase ISO 639-2/639-3 codes: '(fra)', '(fra/fre)', '(ger)', ...
 - BCP 47 tags: '(de-DE)', '[pt-BR]', ...
 - spelled-out language names, native or English, as a dash suffix or in
   parentheses: '- English', '- Deutsch (German)', '(French)', ...
@@ -52,6 +53,18 @@ _ISO_CODES = (
     'de', 'fr', 'en', 'es', 'it', 'ja', 'nl', 'pl', 'ru', 'pt',
     'cs', 'hu', 'ko', 'sv', 'da', 'fi', 'no', 'tr', 'zh', 'el',
 )
+
+# Lowercase ISO 639-2 (bibliographic and terminology) / ISO 639-3 codes, eg.
+# '(fra)', '(fre)' or the combined form '(fra/fre)'. Lowercase keeps them apart
+# from the uppercase Windows-style codes above ('FRA').
+_ISO3_CODES = {
+    'eng': 'en', 'deu': 'de', 'ger': 'de', 'fra': 'fr', 'fre': 'fr', 'spa': 'es',
+    'ita': 'it', 'jpn': 'ja', 'zho': 'zh', 'chi': 'zh', 'kor': 'ko', 'rus': 'ru',
+    'por': 'pt', 'pol': 'pl', 'ces': 'cs', 'cze': 'cs', 'hun': 'hu', 'nld': 'nl',
+    'dut': 'nl', 'swe': 'sv', 'dan': 'da', 'fin': 'fi', 'nor': 'no', 'tur': 'tr',
+    'ell': 'el', 'gre': 'el', 'ara': 'ar', 'hin': 'hi', 'hrv': 'hr', 'isl': 'is',
+    'ice': 'is', 'lit': 'lt', 'ron': 'ro', 'rum': 'ro', 'slv': 'sl', 'srp': 'sr',
+}
 
 # BCP 47 locale tags as used by the official buildingSMART translations
 # (github.com/buildingSMART/IFC-translations, Crowdin locales). Not observed in
@@ -128,6 +141,8 @@ LANGUAGE_CODES = {
     'Slovenian': 'sl', 'Swedish': 'sv', 'Turkish': 'tr',
 }
 
+LANGUAGE_CODES.update(_ISO3_CODES)
+
 # BCP 47 tags normalise onto their primary subtag, except where the region
 # carries a script distinction we want to keep (Chinese).
 LANGUAGE_CODES.update({tag: tag.split('-')[0].lower() for tag in _BCP47_TAGS})
@@ -153,6 +168,10 @@ _LCID_PATTERN = re.compile(
 )
 _ISO_PATTERN = re.compile(
     r'^(?P<neutral>.+?)\s*\((?P<lang>' + '|'.join(_ISO_CODES) + r')\)\s*$'
+)
+_ISO3_ALT = '|'.join(_ISO3_CODES)
+_ISO3_PATTERN = re.compile(
+    r'^(?P<neutral>.+?)\s*\((?P<lang>' + _ISO3_ALT + r')(?:/(?:' + _ISO3_ALT + r'))?\)\s*$'
 )
 # BCP 47 tags are distinctive; match them case-insensitively.
 _BCP47_PATTERN = re.compile(
@@ -201,7 +220,7 @@ def split_language(name):
         return name, None
 
     normalized = _normalize(name)
-    for pattern in (_LCID_PATTERN, _ISO_PATTERN, _BCP47_PATTERN, _NAME_PATTERN, _ENGLISH_TAIL_PATTERN):
+    for pattern in (_LCID_PATTERN, _ISO_PATTERN, _ISO3_PATTERN, _BCP47_PATTERN, _NAME_PATTERN, _ENGLISH_TAIL_PATTERN):
         match = pattern.match(normalized)
         if match:
             neutral = match.group('neutral').strip()
