@@ -812,7 +812,7 @@ class EntityCountHistogram(models.Model):
 
     count = models.PositiveIntegerField(
         null=False,
-        help_text="Size of the model (bytes)"
+        help_text="Number of entity instances for this entity type in the model"
     )
 
     is_supertype = models.BooleanField(
