@@ -8,6 +8,7 @@ import threading
 
 from django.db import models
 from django.db.models import Q, F, QuerySet, TextField, Case, When, Value, IntegerField, CharField, Max, Sum
+from django.db.models.fields.json import KeyTextTransform
 from django.db.models.functions import Cast, Coalesce
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, ValidationError
@@ -806,7 +807,7 @@ class Model(TimestampedBaseModel, IdObfuscator):
             .values("entity_index")
             .annotate(count=Sum("count"))
         )
-        if not entries:
+        if not entries or self.schema is None:
             return {}
         entity_names = EntityCountHistogram.entity_names(self.schema)
         return {
@@ -877,6 +878,8 @@ class EntityCountHistogram(models.Model):
     def entity_name(self):
         if self.is_completion_marker:
             return "Completion marker"
+        if self.model.schema is None:
+            return "No schema"
         try:
             return self.string_from_index(self.model.schema, self.entity_index)
         except (IndexError, RuntimeError, TypeError):
@@ -953,6 +956,8 @@ class PsetCountHistogram(models.Model):
             return "Completion marker"
         if self.entity_index is None:
             return "Property definitions"
+        if self.model.schema is None:
+            return "No schema"
         try:
             return EntityCountHistogram.string_from_index(
                 self.model.schema,
@@ -1032,6 +1037,20 @@ class TemplateStatistic(models.Model):
                 fields=["model", "template_name"],
                 condition=Q(graph__isnull=True),
                 name="unique_template_statistic_completion_marker",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                KeyTextTransform("PropertyType", "graph"),
+                name="templatestat_propertytype_idx",
+                condition=Q(template_name="Use_of_property_types.md"),
+                include=["id", "model_id"],
+            ),
+            models.Index(
+                KeyTextTransform("ParentCurve", "graph"),
+                name="templatestat_parentcurve_idx",
+                condition=Q(template_name="Usage_of_transition_curves_geometry.md"),
+                include=["id", "model_id"],
             ),
         ]
 
